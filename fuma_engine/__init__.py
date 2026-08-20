@@ -9,6 +9,7 @@ from fuma_engine.attribute_extractor import extract_attributes
 from fuma_engine.description_builder import build_all_descriptions
 from fuma_engine.confidence_evaluator import evaluate_record
 from fuma_engine.pipeline_interface import enrich_single_item, enrich_batch, enrich_dataframe
+from fuma_engine.benchmark_metrics import calculate_benchmark_metrics
 
 __version__ = "0.1.0"
 __all__ = [
@@ -20,5 +21,6 @@ __all__ = [
     "evaluate_record",
     "enrich_single_item",
     "enrich_batch",
-    "enrich_dataframe"
+    "enrich_dataframe",
+    "calculate_benchmark_metrics"
 ]
