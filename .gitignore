@@ -1,3 +1,10 @@
+# Ignore local working and problem statement files
+Probelm_statement/
+stage1_normalized_output.csv
+run_benchmark.py
+test_interactive.py
+tests/
+
 # Python bytecode and cache
 __pycache__/
 *.py[cod]
