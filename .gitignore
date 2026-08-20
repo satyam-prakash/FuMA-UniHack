@@ -1,3 +1,7 @@
+# Local test scripts & scratch runners
+test_member2_local.py
+test_*.py
+
 # Problem Statement & Datasets
 Probelm_statement/
 stage1_normalized_output.csv
