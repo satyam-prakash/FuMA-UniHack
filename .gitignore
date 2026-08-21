@@ -70,3 +70,4 @@ member3/frontend/dist/
 # Member 3 tests are real deliverables, not scratch runners
 !member3/tests/
 !member3/tests/test_*.py
+.playwright-mcp/

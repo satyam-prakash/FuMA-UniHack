@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Industrial Modernist base: heavy-paper cream substrate, charcoal ink.
+   No gradients, no blurs, no soft shadows anywhere in this stylesheet. */
+@layer base {
+  * {
+    border-radius: 0;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-background text-on-background font-body-md text-body-md;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    @apply bg-primary-container text-on-primary-container;
+  }
+
+  /* Square, hairline scrollbars to match the technical-drawing language. */
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #d8d2c8;
+    border-radius: 0;
+  }
+
+  /* Native controls kept square; active fill is terracotta. */
+  input[type='checkbox'],
+  input[type='radio'] {
+    border-radius: 0;
+    accent-color: #994422;
+  }
+
+  input,
+  select,
+  button {
+    border-radius: 0;
+    font-family: inherit;
+  }
+
+  /* Recharts defaults draw a rounded focus ring; strip it. */
+  .recharts-wrapper,
+  .recharts-surface {
+    border-radius: 0;
+  }
+}
