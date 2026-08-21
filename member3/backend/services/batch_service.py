@@ -19,9 +19,6 @@ from typing import Any, Dict, List, Optional
 
 from member3.backend.services.pipeline_service import enrich_raw_row
 
-TERMINAL_STATUSES = {"completed", "completed_with_review", "failed", "exported"}
-
-
 def _new_job_id() -> str:
     return f"job_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:4]}"
 
