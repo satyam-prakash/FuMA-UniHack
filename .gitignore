@@ -62,3 +62,7 @@ MANIFEST
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Member 3 frontend build artifacts
+member3/frontend/node_modules/
+member3/frontend/dist/
