@@ -14,7 +14,7 @@ from __future__ import annotations
 import threading
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from member3.backend.services.pipeline_service import enrich_raw_row
@@ -136,10 +136,14 @@ class JobStore:
         page = max(1, page)
         page_size = max(1, min(page_size, 500))
         start = (page - 1) * page_size
+        total = len(rows)
+        pages = (total + page_size - 1) // page_size
         return {
+            "job_id": job_id,
             "page": page,
             "page_size": page_size,
-            "total": len(rows),
+            "total": total,
+            "pages": pages,
             "rows": rows[start : start + page_size],
         }
 
@@ -153,10 +157,27 @@ class JobStore:
         return None
 
     def review_rows(self, job_id: str) -> Optional[List[Dict[str, Any]]]:
+        """Compact queue entries. Deliberately NOT full RowResults: the queue can
+        hold most of a batch, and shipping 252-column delivery rows for every
+        entry would turn a 250 KB response into a multi-megabyte one."""
         job = self.get(job_id)
         if job is None:
             return None
-        return [r for r in job["results"] if r["review"]["needs_review"] or r["status"] == "error"]
+        return [
+            {
+                "row_id": r["row_id"],
+                "mpn": r["mpn"],
+                "part_desc": r["part_desc"],
+                "brand_name": r["brand_name"],
+                "confidence_score": r["confidence_score"],
+                "status": r["status"],
+                "reasons": r["review"]["reasons"],
+                "categories": r["review"]["categories"],
+                "decision": r["review"]["decision"],
+            }
+            for r in job["results"]
+            if r["review"]["needs_review"] or r["status"] == "error"
+        ]
 
     def set_review(
         self, job_id: str, row_id: int, action: str, comment: str = ""
@@ -164,8 +185,11 @@ class JobStore:
         result = self.get_result(job_id, row_id)
         if result is None:
             return None
-        result["review"]["decision"] = action
-        result["review"]["comment"] = comment
+        result["review"]["decision"] = {
+            "action": action,
+            "comment": comment,
+            "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }
         if action in ("approve", "mark_reviewed", "override"):
             result["review"]["needs_review"] = False
         return result

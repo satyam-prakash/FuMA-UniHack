@@ -24,7 +24,8 @@ export type ReviewCategory =
   | 'generic_taxonomy'
   | 'description_issue'
   | 'export_issue'
-  | 'processing_error';
+  | 'processing_error'
+  | 'missing_required_field';
 
 export const TERMINAL_STATUSES: readonly JobStatus[] = [
   'completed',
@@ -109,12 +110,17 @@ export interface Validation {
   export_warnings: string[];
 }
 
+export interface ReviewDecision {
+  action: ReviewAction;
+  comment: string;
+  at: string;
+}
+
 export interface ReviewState {
   needs_review: boolean;
   reasons: string[];
   categories: ReviewCategory[];
-  decision: ReviewAction | null;
-  comment: string;
+  decision: ReviewDecision | null;
 }
 
 export interface RowError {
@@ -151,10 +157,28 @@ export interface RowDetail extends RowResult {
 }
 
 export interface ResultsPage {
+  job_id: string;
   page: number;
   page_size: number;
   total: number;
+  pages: number;
   rows: RowResult[];
+}
+
+/**
+ * Compact row served by GET /api/jobs/{id}/review. The queue can hold most of
+ * a batch, so it carries only what the review screen needs.
+ */
+export interface ReviewRow {
+  row_id: number;
+  mpn: string;
+  part_desc: string;
+  brand_name: string;
+  confidence_score: number;
+  status: RowStatus;
+  reasons: string[];
+  categories: ReviewCategory[];
+  decision: ReviewDecision | null;
 }
 
 export interface BenchmarkField {

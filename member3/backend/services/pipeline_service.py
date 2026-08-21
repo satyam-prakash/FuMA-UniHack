@@ -37,6 +37,10 @@ M1_ADDED_KEYS = (
     "STAGE1_STATUS",
 )
 
+#: Business fields a row cannot live without. Blank values (not just missing
+#: keys) put the row straight into the review queue with confidence 0.
+REQUIRED_ROW_FIELDS = ("Mfg_Part_Num", "Part_Desc", "Part_Manuf")
+
 REVIEW_CATEGORIES = (
     "low_confidence",
     "schema_failure",
@@ -45,6 +49,7 @@ REVIEW_CATEGORIES = (
     "description_issue",
     "export_issue",
     "processing_error",
+    "missing_required_field",
 )
 
 INVOICE_MAX = 40
@@ -112,7 +117,9 @@ def validation_flags(
         "invoice_caps": bool(invoice) and invoice.isupper(),
         "invoice_pass": 0 < len(invoice) <= INVOICE_MAX and invoice.isupper(),
         "mobile_len": len(mobile),
-        "schema_mobile_pass": len(mobile) <= MOBILE_SCHEMA_MAX,
+        # Schema allowance is 0 < len <= 85: an EMPTY mobile description is not
+        # "passing" anything, so it must not count toward the compliance rate.
+        "schema_mobile_pass": 0 < len(mobile) <= MOBILE_SCHEMA_MAX,
         "mobile_target_pass": MOBILE_TARGET[0] <= len(mobile) <= MOBILE_TARGET[1],
         "attribute_count": len(enriched.get("attributes") or []),
         "feature_count": len(enriched.get("features") or []),
@@ -154,7 +161,6 @@ def _base_result(raw: Dict[str, str], row_id: int) -> Dict[str, Any]:
             "reasons": [],
             "categories": [],
             "decision": None,
-            "comment": "",
         },
         "error": None,
     }
@@ -170,7 +176,25 @@ def _fail(result: Dict[str, Any], stage: str, exc: BaseException) -> Dict[str, A
         "reasons": [f"{stage} stage failed: {message}"],
         "categories": ["processing_error"],
         "decision": None,
-        "comment": "",
+    }
+    return result
+
+
+def _input_invalid_result(raw: Dict[str, str], row_id: int, missing: List[str]) -> Dict[str, Any]:
+    """A row missing a required business field never enters the engines.
+
+    There is nothing to normalize or enrich without the identity fields, so the
+    row is graded ``review`` with confidence 0 and a reason naming the gap. It
+    is also excluded from delivery (no ``enriched`` record), so a blank-MPN row
+    can never ship or be counted as a clean success.
+    """
+    result = _base_result(raw, row_id)
+    result["status"] = "review"
+    result["review"] = {
+        "needs_review": True,
+        "reasons": [f"Required field is missing or blank: {', '.join(missing)}"],
+        "categories": ["missing_required_field"],
+        "decision": None,
     }
     return result
 
@@ -179,6 +203,10 @@ def enrich_raw_row(raw_row: dict, row_id: int = 0) -> dict:
     """Runs one upload row through the full pipeline and grades it. Never raises."""
     raw = {str(k): "" if v is None else str(v) for k, v in (raw_row or {}).items()}
     result = _base_result(raw, row_id)
+
+    missing_fields = [f for f in REQUIRED_ROW_FIELDS if not str(raw.get(f, "")).strip()]
+    if missing_fields:
+        return _input_invalid_result(raw, row_id, missing_fields)
 
     try:
         normalized_full = default_pipeline().normalize(raw_row or {})
@@ -208,6 +236,8 @@ def enrich_raw_row(raw_row: dict, row_id: int = 0) -> dict:
     # Member 3 flags a row for review when Member 2 asks for it OR when our own
     # delivery-side rules fail, so compliance problems can never ship silently.
     reasons = [str(r) for r in enriched.get("review_reasons") or []]
+    if enriched.get("needs_review") and not reasons:
+        reasons.append("Flagged for review by the enrichment engine")
     if not validation["invoice_char_pass"]:
         reasons.append(f"INVOICE_DESC exceeds 40 characters ({validation['invoice_len']} chars)")
     if not validation["invoice_caps"]:
@@ -226,13 +256,11 @@ def enrich_raw_row(raw_row: dict, row_id: int = 0) -> dict:
         if reason not in deduped:
             deduped.append(reason)
 
-    needs_review = bool(
-        enriched.get("needs_review")
-        or not validation["invoice_char_pass"]
-        or not validation["invoice_caps"]
-        or validation["attribute_count"] == 0
-        or not validation["schema_valid"]
-    )
+    # Review policy: a row is queued for human review if and only if it carries
+    # at least one review reason. This keeps queue membership, the reasons
+    # column and the category filters mutually consistent — a row with a
+    # documented quality problem can never silently ship as a clean success.
+    needs_review = bool(deduped)
     confidence = float(enriched.get("confidence_score") or 0.0)
     result.update(
         {
@@ -250,7 +278,6 @@ def enrich_raw_row(raw_row: dict, row_id: int = 0) -> dict:
                 "reasons": deduped,
                 "categories": _categories(enriched, validation),
                 "decision": None,
-                "comment": "",
             },
         }
     )

@@ -12,7 +12,7 @@ import csv
 import io
 import re
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse, Response
@@ -27,7 +27,7 @@ from member3.backend.services.pipeline_service import (
 from member3.delivery.columns import DELIVERY_COLUMN_COUNT
 from member3.delivery.csv_exporter import rows_to_csv_bytes
 from member3.delivery.mapper import map_record_to_delivery
-from member3.delivery.validators import check_delivery
+from member3.delivery.validators import DeliveryValidationError, check_delivery
 from member3.delivery.xlsx_exporter import rows_to_xlsx_bytes
 
 router = APIRouter(prefix="/api")
@@ -74,6 +74,23 @@ def _parse_xlsx_bytes(payload: bytes) -> tuple[List[Dict[str, Any]], List[str]]:
     return rows, header
 
 
+def _duplicate_headers(header: Sequence[str]) -> List[str]:
+    """Case-insensitive duplicate column names. csv.DictReader silently keeps
+    the last value for a duplicated key, which would hide data corruption, so
+    duplicates are rejected before any row is built."""
+    seen: Dict[str, int] = {}
+    dupes: List[str] = []
+    for name in header or []:
+        key = str(name).strip().lower()
+        if not key:
+            continue
+        seen[key] = seen.get(key, 0) + 1
+    for key, count in seen.items():
+        if count > 1:
+            dupes.append(key)
+    return dupes
+
+
 def _upload_response(summary: Dict[str, Any]) -> Dict[str, Any]:
     """Job summaries expose ``total``; the upload contract calls it ``rows``."""
     return {
@@ -85,11 +102,13 @@ def _upload_response(summary: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _require_job(job_id: str) -> Dict[str, Any]:
-    job = get_job_store().get(job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail=f"Unknown job_id {job_id}")
-    return job
+def _require_job(job_id: str) -> Optional[Dict[str, Any]]:
+    """Returns the job or None. Callers return ``_job_not_found(job_id)``."""
+    return get_job_store().get(job_id)
+
+
+def _job_not_found(job_id: str) -> JSONResponse:
+    return _error(404, "JOB_NOT_FOUND", f"Unknown job_id {job_id}")
 
 
 def _ground_truth_rows() -> List[Dict[str, Any]]:
@@ -144,13 +163,22 @@ async def upload(file: UploadFile = File(...)):
     except Exception as exc:
         return _error(400, "PARSE_ERROR", "Could not parse uploaded file", [str(exc)])
 
+    dupes = _duplicate_headers(header)
+    if dupes:
+        return _error(
+            400,
+            "DUPLICATE_COLUMNS",
+            "Uploaded file contains duplicate column names",
+            [f"duplicates: {', '.join(dupes)}"],
+        )
+
     if not rows:
         return _error(400, "NO_DATA_ROWS", "File contains a header but no data rows")
 
     missing = validate_input_columns(header)
     if missing:
         return _error(
-            400,
+            422,
             "MISSING_REQUIRED_COLUMNS",
             "Input is missing required columns",
             [f"missing: {', '.join(missing)}", f"required: {', '.join(REQUIRED_INPUT_COLUMNS)}"],
@@ -174,6 +202,8 @@ def load_sample():
 def enrich(request: EnrichRequest):
     store = get_job_store()
     job = _require_job(request.job_id)
+    if job is None:
+        return _job_not_found(request.job_id)
     if job["status"] in ("queued", "processing"):
         return {"job_id": job["job_id"], "status": job["status"]}
     summary = store.start_job_async(request.job_id)
@@ -185,7 +215,8 @@ def enrich(request: EnrichRequest):
 
 @router.get("/jobs/{job_id}")
 def job_status(job_id: str):
-    _require_job(job_id)
+    if _require_job(job_id) is None:
+        return _job_not_found(job_id)
     return get_job_store().summary(job_id)
 
 
@@ -197,16 +228,18 @@ def job_results(
     status: str = "all",
     search: str = "",
 ):
-    _require_job(job_id)
+    if _require_job(job_id) is None:
+        return _job_not_found(job_id)
     return get_job_store().list_results(job_id, page, page_size, status, search)
 
 
 @router.get("/jobs/{job_id}/results/{row_id}")
 def job_result(job_id: str, row_id: int):
-    _require_job(job_id)
+    if _require_job(job_id) is None:
+        return _job_not_found(job_id)
     result = get_job_store().get_result(job_id, row_id)
     if result is None:
-        raise HTTPException(status_code=404, detail=f"Unknown row_id {row_id}")
+        return _error(404, "ROW_NOT_FOUND", f"Unknown row_id {row_id}")
 
     payload = dict(result)
     mpn = str((result.get("enriched") or {}).get("mfg_part_num", "")).strip().upper()
@@ -224,6 +257,8 @@ def job_result(job_id: str, row_id: int):
 @router.get("/jobs/{job_id}/metrics")
 def job_metrics(job_id: str):
     job = _require_job(job_id)
+    if job is None:
+        return _job_not_found(job_id)
     metrics = compute_metrics(job["results"])
     metrics["benchmark"] = compute_benchmark(job["results"], _ground_truth_rows())
     metrics["elapsed_seconds"] = job.get("elapsed_seconds", 0.0)
@@ -236,16 +271,18 @@ def job_metrics(job_id: str):
 
 @router.get("/jobs/{job_id}/review")
 def review_queue(job_id: str):
-    _require_job(job_id)
+    if _require_job(job_id) is None:
+        return _job_not_found(job_id)
     return {"rows": get_job_store().review_rows(job_id) or []}
 
 
 @router.post("/jobs/{job_id}/review/{row_id}")
 def submit_review(job_id: str, row_id: int, request: ReviewRequest):
-    _require_job(job_id)
+    if _require_job(job_id) is None:
+        return _job_not_found(job_id)
     result = get_job_store().set_review(job_id, row_id, request.action, request.comment)
     if result is None:
-        raise HTTPException(status_code=404, detail=f"Unknown row_id {row_id}")
+        return _error(404, "ROW_NOT_FOUND", f"Unknown row_id {row_id}")
     return {"row_id": row_id, "review": result["review"]}
 
 
@@ -255,6 +292,8 @@ def submit_review(job_id: str, row_id: int, request: ReviewRequest):
 @router.get("/jobs/{job_id}/export/status")
 def export_status(job_id: str):
     job = _require_job(job_id)
+    if job is None:
+        return _job_not_found(job_id)
     rows, warnings = _delivery_rows(job)
     valid, errors = check_delivery(rows)
     return {
@@ -266,21 +305,23 @@ def export_status(job_id: str):
     }
 
 
-def _validated_delivery_rows(job: Dict[str, Any]) -> List[Dict[str, str]]:
+def _validated_delivery_rows(job: Dict[str, Any]) -> Optional[List[Dict[str, str]]]:
     rows, _ = _delivery_rows(job)
     valid, errors = check_delivery(rows)
     if not valid:
-        raise HTTPException(
-            status_code=409,
-            detail={"code": "DELIVERY_VALIDATION_FAILED", "errors": errors},
-        )
+        raise DeliveryValidationError("; ".join(errors))
     return rows
 
 
 @router.get("/jobs/{job_id}/export.csv")
 def export_job_csv(job_id: str):
     job = _require_job(job_id)
-    payload = rows_to_csv_bytes(_validated_delivery_rows(job))
+    if job is None:
+        return _job_not_found(job_id)
+    try:
+        payload = rows_to_csv_bytes(_validated_delivery_rows(job))
+    except DeliveryValidationError as exc:
+        return _error(409, "DELIVERY_VALIDATION_FAILED", "Delivery validation failed", [str(exc)])
     job["status"] = "exported"
     return Response(
         content=payload,
@@ -292,7 +333,12 @@ def export_job_csv(job_id: str):
 @router.get("/jobs/{job_id}/export.xlsx")
 def export_job_xlsx(job_id: str):
     job = _require_job(job_id)
-    payload = rows_to_xlsx_bytes(_validated_delivery_rows(job))
+    if job is None:
+        return _job_not_found(job_id)
+    try:
+        payload = rows_to_xlsx_bytes(_validated_delivery_rows(job))
+    except DeliveryValidationError as exc:
+        return _error(409, "DELIVERY_VALIDATION_FAILED", "Delivery validation failed", [str(exc)])
     job["status"] = "exported"
     return Response(
         content=payload,

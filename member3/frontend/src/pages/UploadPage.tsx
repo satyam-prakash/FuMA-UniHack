@@ -18,7 +18,8 @@ type State = 'empty' | 'selected' | 'validating' | 'invalid' | 'ready';
 
 interface Preview {
   file: File;
-  rows: number;
+  /** Row count for CSV previews; null when unknown (XLSX is validated server-side). */
+  rows: number | null;
   header: string[];
   missing: string[];
 }
@@ -65,30 +66,39 @@ export default function UploadPage({
     setPreview(null);
     setState('validating');
 
-    if (!file.name.toLowerCase().endsWith('.csv')) {
-      setError(`Unsupported file type "${file.name}". Ingest expects a .csv export.`);
+    const suffix = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+    if (!['.csv', '.xlsx'].includes(suffix)) {
+      setError(`Unsupported file type "${file.name}". Ingest expects a .csv or .xlsx export.`);
       setState('invalid');
       return;
     }
 
-    const text = await file.text();
-    const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
-    if (lines.length < 2) {
-      setError('File carries a header but no data rows.');
-      setState('invalid');
+    if (suffix === '.csv') {
+      const text = await file.text();
+      const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
+      if (lines.length < 2) {
+        setError('File carries a header but no data rows.');
+        setState('invalid');
+        return;
+      }
+
+      const header = splitCsvLine(lines[0]);
+      const present = new Set(header.map((name) => name.toLowerCase()));
+      const missing = REQUIRED_INPUT_COLUMNS.filter((column) => !present.has(column.toLowerCase()));
+
+      setPreview({ file, rows: lines.length - 1, header, missing });
+      if (missing.length > 0) {
+        setError(`Missing required column${missing.length > 1 ? 's' : ''}: ${missing.join(', ')}`);
+        setState('invalid');
+        return;
+      }
+      setState('ready');
       return;
     }
 
-    const header = splitCsvLine(lines[0]);
-    const present = new Set(header.map((name) => name.toLowerCase()));
-    const missing = REQUIRED_INPUT_COLUMNS.filter((column) => !present.has(column.toLowerCase()));
-
-    setPreview({ file, rows: lines.length - 1, header, missing });
-    if (missing.length > 0) {
-      setError(`Missing required column${missing.length > 1 ? 's' : ''}: ${missing.join(', ')}`);
-      setState('invalid');
-      return;
-    }
+    // XLSX: header/column checks are done server-side (binary format); let the
+    // upload endpoint validate and surface its error envelope verbatim.
+    setPreview({ file, rows: null, header: [], missing: [] });
     setState('ready');
   }
 
@@ -156,7 +166,7 @@ export default function UploadPage({
             <input
               ref={inputRef}
               type="file"
-              accept=".csv"
+              accept=".csv,.xlsx"
               className="hidden"
               onChange={(event) => {
                 const file = event.target.files?.[0];
@@ -196,7 +206,7 @@ export default function UploadPage({
                 {busy ? 'Dispatching\u2026' : 'Start Enrichment'}
               </Button>
               <span className="font-data-mono text-data-mono text-secondary uppercase">
-                {preview.rows.toLocaleString()} rows queued
+                {preview.rows === null ? 'ready to upload' : `${preview.rows.toLocaleString()} rows queued`}
               </span>
             </div>
           )}
@@ -217,7 +227,9 @@ export default function UploadPage({
                 <span className="font-data-mono text-data-mono text-ink-graphite truncate max-w-[16rem]">
                   {preview.file.name}
                 </span>
-                <StatChip tone="neutral">{preview.rows.toLocaleString()} ROWS</StatChip>
+                <StatChip tone="neutral">
+                  {preview.rows === null ? 'ROW COUNT ON SERVER' : `${preview.rows.toLocaleString()} ROWS`}
+                </StatChip>
                 <StatChip tone="neutral">{preview.header.length} COLUMNS</StatChip>
               </div>
             )}

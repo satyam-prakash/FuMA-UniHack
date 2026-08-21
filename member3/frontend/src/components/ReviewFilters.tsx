@@ -5,7 +5,7 @@
  * rather than pattern-matching the human-readable reason strings.
  */
 
-import type { ReviewCategory, RowResult } from '../types';
+import type { ReviewCategory, ReviewRow } from '../types';
 
 export type FilterKey = 'all' | ReviewCategory;
 
@@ -18,6 +18,7 @@ export const FILTER_LABELS: Record<FilterKey, string> = {
   description_issue: 'Description issue',
   export_issue: 'Export issue',
   processing_error: 'Processing error',
+  missing_required_field: 'Missing required field',
 };
 
 export const FILTER_ORDER: FilterKey[] = [
@@ -29,12 +30,13 @@ export const FILTER_ORDER: FilterKey[] = [
   'description_issue',
   'export_issue',
   'processing_error',
+  'missing_required_field',
 ];
 
 /** True when a row belongs in the given filter. */
-export function matchesFilter(row: RowResult, filter: FilterKey): boolean {
+export function matchesFilter(row: ReviewRow, filter: FilterKey): boolean {
   if (filter === 'all') return true;
-  return row.review.categories.includes(filter);
+  return row.categories.includes(filter);
 }
 
 export default function ReviewFilters({

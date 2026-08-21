@@ -69,7 +69,9 @@ def compute_metrics(results: List[Dict[str, Any]]) -> Dict[str, Any]:
     schema_ok = specific_classpath = with_attributes = 0
     confidence_sum = 0.0
     attribute_sum = 0
-    buckets = [0] * 10
+    # Contract buckets: 0-59, 60-79, 80-89, 90-99, 100.
+    bucket_ranges = [(0, 59), (60, 79), (80, 89), (90, 99), (100, 100)]
+    buckets = [0] * len(bucket_ranges)
     reason_counts: Dict[str, int] = {}
 
     for result in results:
@@ -98,14 +100,18 @@ def compute_metrics(results: List[Dict[str, Any]]) -> Dict[str, Any]:
 
         confidence = float(result.get("confidence") or 0.0)
         confidence_sum += confidence
-        buckets[min(9, max(0, int(confidence // 10)))] += 1
+        for index, (low, high) in enumerate(bucket_ranges):
+            if low <= confidence <= high:
+                buckets[index] += 1
+                break
 
         for reason in (result.get("review") or {}).get("reasons", []):
             key = _reason_bucket(reason)
             reason_counts[key] = reason_counts.get(key, 0) + 1
 
     histogram = [
-        {"bucket": f"{i * 10}-{i * 10 + 9}", "count": count} for i, count in enumerate(buckets)
+        {"bucket": f"{low}-{high}" if low != high else f"{low}", "count": count}
+        for (low, high), count in zip(bucket_ranges, buckets)
     ]
     reasons = sorted(
         ({"reason": k, "count": v} for k, v in reason_counts.items()),
@@ -205,6 +211,11 @@ def compute_benchmark(
 
     scored = [f for f in fields if f["compared"]]
     overall = round(sum(f["normalized_match_rate"] for f in scored) / len(scored), 2) if scored else 0.0
+
+    # No ground-truth row matched: return None (contract) so the dashboard hides
+    # the panel instead of rendering a fabricated scorecard of zeros.
+    if not matched:
+        return None
 
     return {
         "ground_truth_rows": len(truth_by_mpn),

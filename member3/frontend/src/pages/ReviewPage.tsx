@@ -15,7 +15,7 @@ import ReviewFilters, {
   type FilterKey,
 } from '../components/ReviewFilters';
 import StatChip, { StatusChip } from '../components/StatChip';
-import { enrichedOf, type ReviewAction, type RowResult } from '../types';
+import type { ReviewAction, ReviewRow } from '../types';
 
 const ACTIONS: { action: ReviewAction; label: string }[] = [
   { action: 'approve', label: 'Approve' },
@@ -32,7 +32,7 @@ export default function ReviewPage({
   jobId: string;
   onOpenRow: (rowId: number) => void;
 }) {
-  const [rows, setRows] = useState<RowResult[]>([]);
+  const [rows, setRows] = useState<ReviewRow[]>([]);
   const [category, setCategory] = useState<FilterKey>('all');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<number | null>(null);
@@ -57,14 +57,14 @@ export default function ReviewPage({
 
   const visible = rows.filter((row) => matchesFilter(row, category));
 
-  async function decide(row: RowResult, action: ReviewAction) {
+  async function decide(row: ReviewRow, action: ReviewAction) {
     setPending(row.row_id);
     setError(null);
     try {
       const response = await submitReview(jobId, row.row_id, action);
       setRows((current) =>
         current.map((candidate) =>
-          candidate.row_id === row.row_id ? { ...candidate, review: response.review } : candidate,
+          candidate.row_id === row.row_id ? { ...candidate, decision: response.review.decision } : candidate,
         ),
       );
     } catch (cause) {
@@ -108,68 +108,65 @@ export default function ReviewPage({
             </tr>
           </thead>
           <tbody>
-            {visible.map((row) => {
-              const enriched = enrichedOf(row);
-              return (
-                <tr key={row.row_id} className="border-b border-border-subtle last:border-b-0 align-top">
-                  <td className="px-4 py-3">
-                    <button
-                      type="button"
-                      onClick={() => onOpenRow(row.row_id)}
-                      className="font-data-mono text-data-mono text-ink-graphite underline decoration-border-subtle hover:decoration-primary hover:text-primary transition-colors text-left"
-                    >
-                      {enriched.mfg_part_num || row.mpn || `ROW-${row.row_id}`}
-                    </button>
-                  </td>
-                  <td className="px-4 py-3 font-data-mono text-data-mono text-ink-graphite">
-                    {row.confidence.toFixed(1)}
-                  </td>
-                  <td className="px-4 py-3 max-w-[26rem]">
-                    <div className="flex flex-col gap-1">
-                      {row.review.reasons.length === 0 ? (
-                        <span className="font-data-mono text-annotation text-secondary uppercase">
-                          —
-                        </span>
-                      ) : (
-                        row.review.reasons.map((reason) => (
-                          <span
-                            key={reason}
-                            className="font-data-mono text-annotation text-ink-graphite border-l-2 border-l-primary pl-2"
-                          >
-                            {reason}
-                          </span>
-                        ))
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusChip status={row.status} />
-                  </td>
-                  <td className="px-4 py-3">
-                    {row.review.decision ? (
-                      <StatChip tone="accent">{row.review.decision.replace('_', ' ')}</StatChip>
+            {visible.map((row) => (
+              <tr key={row.row_id} className="border-b border-border-subtle last:border-b-0 align-top">
+                <td className="px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => onOpenRow(row.row_id)}
+                    className="font-data-mono text-data-mono text-ink-graphite underline decoration-border-subtle hover:decoration-primary hover:text-primary transition-colors text-left"
+                  >
+                    {row.mpn || `ROW-${row.row_id}`}
+                  </button>
+                </td>
+                <td className="px-4 py-3 font-data-mono text-data-mono text-ink-graphite">
+                  {row.confidence_score.toFixed(1)}
+                </td>
+                <td className="px-4 py-3 max-w-[26rem]">
+                  <div className="flex flex-col gap-1">
+                    {row.reasons.length === 0 ? (
+                      <span className="font-data-mono text-annotation text-secondary uppercase">
+                        —
+                      </span>
                     ) : (
-                      <StatChip tone="neutral">pending</StatChip>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-2">
-                      {ACTIONS.map(({ action, label }) => (
-                        <Button
-                          key={action}
-                          size="sm"
-                          variant={action === 'approve' ? 'primary' : 'ghost'}
-                          disabled={pending === row.row_id}
-                          onClick={() => void decide(row, action)}
+                      row.reasons.map((reason) => (
+                        <span
+                          key={reason}
+                          className="font-data-mono text-annotation text-ink-graphite border-l-2 border-l-primary pl-2"
                         >
-                          {label}
-                        </Button>
-                      ))}
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
+                          {reason}
+                        </span>
+                      ))
+                    )}
+                  </div>
+                </td>
+                <td className="px-4 py-3">
+                  <StatusChip status={row.status} />
+                </td>
+                <td className="px-4 py-3">
+                  {row.decision ? (
+                    <StatChip tone="accent">{row.decision.action.replace('_', ' ')}</StatChip>
+                  ) : (
+                    <StatChip tone="neutral">pending</StatChip>
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex flex-wrap gap-2">
+                    {ACTIONS.map(({ action, label }) => (
+                      <Button
+                        key={action}
+                        size="sm"
+                        variant={action === 'approve' ? 'primary' : 'ghost'}
+                        disabled={pending === row.row_id}
+                        onClick={() => void decide(row, action)}
+                      >
+                        {label}
+                      </Button>
+                    ))}
+                  </div>
+                </td>
+              </tr>
+            ))}
 
             {visible.length === 0 && (
               <tr>

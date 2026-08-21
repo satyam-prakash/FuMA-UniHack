@@ -6,9 +6,9 @@ parallel against exactly these signatures.
 
 ## 0. Repo facts
 
-- Repo root: `/Users/ashutoshyadav/Desktop/Hackathon/FuMA-UniHack`
-- Python venv: `.venv/bin/python` (fastapi, uvicorn, pandas, openpyxl, rapidfuzz, pydantic, python-multipart, pytest, httpx all installed)
-- Run tests from repo root: `.venv/bin/python -m pytest member3/tests -q`
+- Repo root: the git repository containing `fuma_rules/`, `fuma_engine/` and `member3/` (paths in this document are repo-relative).
+- Python venv: `.venv/bin/python` or `~/.fuma-venv/v1/bin/python` (fastapi, uvicorn, pandas, openpyxl, rapidfuzz, pydantic, python-multipart, pytest, httpx all installed).
+- Run tests from repo root: `PYTHONPATH=. .venv/bin/python -m pytest member3/tests -q`
 - Member 1 package: `fuma_rules` (do NOT modify)
 - Member 2 package: `fuma_engine` (do NOT modify)
 - Member 3 package: `member3` (all our work lives here)
@@ -43,6 +43,12 @@ enriched = enrich_single_item(normalized)  # dict -> dict (ProductRecord.model_d
 `review_reasons` (list of str).
 
 Verified: 1000 rows through M1+M2 in 0.11 s, 0 exceptions.
+
+Member 3 validates three required business fields before the engines run —
+`Mfg_Part_Num`, `Part_Desc`, `Part_Manuf` — via `REQUIRED_ROW_FIELDS`. A row
+missing or blank on any of them is short-circuited: `status="review"`,
+`confidence=0.0`, reason `Required field is missing or blank: ...`, category
+`missing_required_field`, and no `enriched` record (so it never ships).
 
 ## 2. Delivery layer — `member3/delivery/`
 
@@ -174,7 +180,8 @@ def new_pipeline() -> "Pipeline"                          # holds the reusable M
 
 `REVIEW_CATEGORIES` (exact literals, used by the review filters UI):
 `"low_confidence"`, `"schema_failure"`, `"no_attributes"`, `"generic_taxonomy"`,
-`"description_issue"`, `"export_issue"`, `"processing_error"`.
+`"description_issue"`, `"export_issue"`, `"processing_error"`,
+`"missing_required_field"`.
 
 Rules:
 
@@ -182,9 +189,23 @@ Rules:
   exception set `status="error"`, fill `error` with `stage` in
   `{"member1","member2","schema","delivery"}`, add category `"processing_error"`,
   and STILL return a RowResult. Never raise out of `enrich_raw_row`.
-- `status="review"` when `review["needs_review"]` and no error.
+- **Review policy (deterministic):** `needs_review == bool(reasons)`. A row is
+  queued for human review if and only if it carries at least one review reason,
+  so queue membership, the reasons column and the category filters can never
+  disagree. Reasons are added for: Member 2 flags (`enriched["needs_review"]`
+  or its `review_reasons`), missing required fields, invoice length/case
+  violations, mobile length outside the 60–80 target, zero extracted
+  attributes, and generic classpath fallback.
+- `status="review"` when `needs_review` and no error; `"success"` only when the
+  row carries zero reasons.
 - `low_confidence` when `confidence_score < 80`.
 - `description_issue` when not `invoice_pass` or not `mobile_target_pass`.
+- Missing required fields short-circuit before M1/M2: `status="review"`,
+  `confidence=0.0`, category `missing_required_field`, no `enriched` record.
+- Mobile schema allowance is `0 < len(mobile_desc) <= 85` — an empty mobile
+  description passes neither `schema_mobile_pass` nor `mobile_target_pass`.
+- Confidence on error/invalid rows is `0.0`; enriched rows keep Member 2's
+  `confidence_score` unchanged (Member 3 never inflates it).
 
 ### `services/batch_service.py`
 
@@ -197,7 +218,10 @@ def start_job(job_id: str) -> dict                               # sets queued, 
 def _run_job(job_id: str) -> None                                # worker; updates counters live
 ```
 
-`Job` dict keys: `job_id` (`f"job_{YYYYmmdd}_{nnn}"`), `filename`, `mode`,
+`Job` dict keys: `job_id` (`f"job_{YYYYmmdd_HHMMSS}_{hex4}"` — chosen over the
+earlier `job_{YYYYmmdd}_{nnn}` sketch because the timestamp+suffix form is
+unique across process restarts, which the in-memory store needs), `filename`,
+`mode`,
 `status`, `total`, `processed`, `success`, `review`, `errors`, `progress` (int 0-100),
 `created_at`, `started_at`, `finished_at`, `elapsed_seconds`, `rows` (raw dicts),
 `results` (list[RowResult]), `stages` (list of `{"key","label","state"}` where state is
@@ -251,21 +275,22 @@ Returns:
 }
 ```
 
-### `services/review_service.py`
+### `services/review_service.py` — served by `batch_service.review_rows`
+
+`list_review_rows` returns COMPACT dicts (never full RowResults — the queue can
+hold most of a batch and full entries would carry the 252-column delivery
+rows):
 
 ```python
-REVIEW_ACTIONS = ("approve","reject","override","mark_reviewed")
-
-def list_review_rows(job: dict, category: str = "all") -> list[dict]
-def record_decision(job: dict, row_id: int, action: str, comment: str = "") -> dict
+{"row_id", "mpn", "part_desc", "brand_name", "confidence_score",
+ "status", "reasons", "categories", "decision"}
 ```
 
-`list_review_rows` returns compact dicts:
-`{"row_id","mpn","part_desc","brand_name","confidence_score","reasons","categories","status","decision"}`.
+`record_decision` stores `decision = {"action", "comment", "at"}` (UTC ISO
+timestamp) and clears `needs_review` for `approve` / `override` /
+`mark_reviewed`; `reject` keeps the row queued. Unknown action or row raises.
 
-`record_decision` raises `ValueError` on unknown action or row.
-
-### `services/export_service.py`
+### `services/export_service.py` — served by `routes/api.py`
 
 ```python
 def collect_delivery_rows(job: dict, include_review: bool = True) -> list[dict]
@@ -294,9 +319,11 @@ of showing a fake score.
 
 ### `models/api_models.py`
 
-Pydantic v2 models: `HealthResponse`, `UploadResponse`, `EnrichRequest`,
-`EnrichResponse`, `JobStatusResponse`, `ResultsPage`, `ReviewDecisionRequest`,
-`ApiError`.
+Pydantic v2 request models: `EnrichRequest` (job_id, mode="demo"),
+`ReviewRequest` (action pattern `^(approve|reject|override|mark_reviewed)$`,
+comment=""). Responses are plain dicts assembled from the job store, the
+pipeline and the delivery validator; mirroring each response as a second
+Pydantic class is deliberately avoided so the two definitions cannot drift.
 
 ### Routes — exact paths
 
@@ -316,18 +343,26 @@ POST /api/demo/sample                             loads member3/data/sample_inpu
 ```
 
 `/results` response: `{"job_id","page","page_size","total","pages","rows":[<compact row>]}`
-where compact row = `{"row_id","mpn","part_desc","brand_name","product_name","classpath","confidence_score","status","needs_review","invoice_desc","mobile_desc"}`.
+where compact row = `{"row_id","mpn","part_desc","brand_name","product_name","classpath","confidence_score","status","needs_review","invoice_desc","mobile_desc"}` and `pages = ceil(total / page_size)`.
 
-Upload validation: extension in `{.csv,.xlsx}`, size <= 25 MB, non-empty, and
-required columns present: `Mfg_Part_Num`, `Part_Desc`, `E1_Brand`,
-`Unilog_Brand`, `DIB_Brand`, `Part_Manuf`. Missing columns -> HTTP 422 with
-`ApiError` body. Filenames are sanitised; job IDs are server-generated.
+Upload validation: extension in `{.csv,.xlsx}`, size <= 8 MB, non-empty,
+unique column names (duplicates -> HTTP 400 `DUPLICATE_COLUMNS`), and required
+columns present: `Mfg_Part_Num`, `Part_Desc`, `E1_Brand`, `Unilog_Brand`,
+`DIB_Brand`, `Part_Manuf`. Missing columns -> HTTP **422** with `ApiError`
+body. Filenames are sanitised; job IDs are server-generated.
 
-Error body shape everywhere:
+Error body shape EVERYWHERE — including 404s (`JOB_NOT_FOUND`,
+`ROW_NOT_FOUND`), unknown `/api/*` routes (`NOT_FOUND`), Pydantic request
+validation failures (`VALIDATION_ERROR`), and export validation failures
+(HTTP 409 `DELIVERY_VALIDATION_FAILED`):
 
 ```json
 { "error": { "code": "...", "message": "...", "row_id": null, "details": [] } }
 ```
+
+The SPA fallback in `main.py` refuses any candidate path that resolves outside
+`member3/frontend/dist` (HTTP 404, JSON body) and answers unknown `/api/*`
+paths with the JSON envelope above — never with HTML.
 
 ### `main.py`
 
@@ -385,15 +420,14 @@ member3/frontend/
   package.json  vite.config.ts  tsconfig.json  tailwind.config.js  postcss.config.js
   src/
     main.tsx  App.tsx  index.css
-    types/api.ts             # TS mirrors of every response in section 3
-    services/api.ts          # typed fetch client, one function per endpoint
-    hooks/useJobPolling.ts   # polls GET /api/jobs/{id} every 400ms while processing
+    types.ts                 # TS mirrors of every response in section 3
+    api/client.ts            # typed fetch client, one function per endpoint
     components/
-      Shell.tsx SideRail.tsx TopBar.tsx
+      AppShell.tsx SideNav.tsx TopBar.tsx
       Plate.tsx              # bordered plate + IDX serial + optional hard shadow
-      Button.tsx StatCard.tsx StatusChip.tsx DataTable.tsx
-      BarChart.tsx DonutChart.tsx        # hand-rolled SVG, no chart library
-      ProgressBar.tsx StageStepper.tsx ConsoleLog.tsx Skeleton.tsx
+      Button.tsx StatChip.tsx StatusChart.tsx ConfidenceChart.tsx
+      ReviewFilters.tsx ResultsTable.tsx KpiGrid.tsx QualityGrid.tsx
+      DiffPanel.tsx          # raw / generated / ground-truth three-up
     pages/
       UploadPage.tsx ProcessingPage.tsx DashboardPage.tsx
       ProductDetailPage.tsx ReviewPage.tsx ExportPage.tsx
@@ -402,11 +436,11 @@ member3/frontend/
 Routing: hash-free client state in `App.tsx` (`useState` view + jobId + rowId).
 Do not add react-router — one state variable covers the six screens.
 
-Charts are hand-rolled SVG (`BarChart`, `DonutChart`) — square terminals, 1.5px
-strokes, `primary`/`tertiary`/`secondary` fills only. No chart library, because
-rounded default themes would violate the design system.
+Charts are hand-rolled SVG (`StatusChart`, `ConfidenceChart`) — square
+terminals, 1.5px strokes, `primary`/`tertiary`/`secondary` fills only. No
+chart library, because rounded default themes would violate the design system.
 
-Loading states use skeleton blocks (`Skeleton.tsx`), never spinners.
+Loading states use skeleton blocks, never spinners.
 
 ### Screens
 

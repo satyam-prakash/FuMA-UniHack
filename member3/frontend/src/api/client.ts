@@ -12,8 +12,9 @@ import type {
   Metrics,
   ResultsPage,
   ReviewAction,
+  ReviewRow,
+  ReviewState,
   RowDetail,
-  RowResult,
   RowStatus,
   UploadResult,
 } from '../types';
@@ -106,10 +107,10 @@ export const getRow = (jobId: string, rowId: number) =>
 export const getMetrics = (jobId: string) => request<Metrics>(`/jobs/${jobId}/metrics`);
 
 export const getReviewQueue = (jobId: string) =>
-  request<{ rows: RowResult[] }>(`/jobs/${jobId}/review`);
+  request<{ rows: ReviewRow[] }>(`/jobs/${jobId}/review`);
 
 export const submitReview = (jobId: string, rowId: number, action: ReviewAction, comment = '') =>
-  request<{ row_id: number; review: RowResult['review'] }>(`/jobs/${jobId}/review/${rowId}`, {
+  request<{ row_id: number; review: ReviewState }>(`/jobs/${jobId}/review/${rowId}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, comment }),

@@ -289,7 +289,7 @@ export default function ProductDetailPage({
                 </StatChip>
               ))}
               {row.review.decision && (
-                <StatChip tone="accent">{row.review.decision.replace('_', ' ')}</StatChip>
+                <StatChip tone="accent">{row.review.decision.action.replace('_', ' ')}</StatChip>
               )}
             </div>
 

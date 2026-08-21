@@ -8,6 +8,9 @@ stage1_normalized_output.csv
 run_benchmark.py
 test_interactive.py
 
+# Member 3's benchmark scorecard is a deliverable, not a scratch runner
+!member3/scripts/run_benchmark.py
+
 # Python bytecode and cache
 __pycache__/
 *.py[cod]
