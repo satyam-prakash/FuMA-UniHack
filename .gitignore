@@ -66,3 +66,7 @@ desktop.ini
 # Member 3 frontend build artifacts
 member3/frontend/node_modules/
 member3/frontend/dist/
+
+# Member 3 tests are real deliverables, not scratch runners
+!member3/tests/
+!member3/tests/test_*.py
