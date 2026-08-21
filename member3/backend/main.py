@@ -67,6 +67,22 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
     )
 
 
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+    if exc.status_code == 404:
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"code": "NOT_FOUND", "message": exc.detail or "Not Found", "row_id": None, "details": []}},
+        )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": {"code": "HTTP_ERROR", "message": str(exc.detail), "row_id": None, "details": []}},
+    )
+
+
 app.include_router(router)
 
 
