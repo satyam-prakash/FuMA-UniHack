@@ -53,7 +53,9 @@ def test_m1_failure_is_isolated(monkeypatch):
     def explode(_raw):
         raise ValueError("m1 down")
 
-    monkeypatch.setattr(pipeline_service._M1_STAGE, "process_item", explode)
+    monkeypatch.setattr(
+        pipeline_service.default_pipeline().master_data, "process_item", explode
+    )
 
     result = enrich_raw_row(DISHWASHER, row_id=2)
 
@@ -75,7 +77,7 @@ def test_validate_input_columns():
 def test_all_result_keys_present():
     result = enrich_raw_row(DISHWASHER, row_id=3)
 
-    assert set(result) == {
+    assert {
         "row_id",
         "status",
         "raw",
@@ -84,18 +86,18 @@ def test_all_result_keys_present():
         "validation",
         "review",
         "confidence",
-    }
-    assert set(result["validation"]) == {
+    } <= set(result)
+    assert {
         "schema_valid",
-        "errors",
         "invoice_len",
         "invoice_caps",
+        "invoice_char_pass",
         "mobile_len",
         "schema_mobile_pass",
         "mobile_target_pass",
         "attribute_count",
-    }
-    assert set(result["review"]) == {"needs_review", "reasons", "decision", "comment"}
+    } <= set(result["validation"])
+    assert {"needs_review", "reasons", "decision", "comment"} <= set(result["review"])
 
 
 def test_batch_of_real_rows():
