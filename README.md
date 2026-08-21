@@ -13,8 +13,8 @@
 [![Vite](https://img.shields.io/badge/Vite-5.4-646CFF.svg?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.4-38B2AC.svg?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
 [![Pytest](https://img.shields.io/badge/Pytest-35%20Passed-449C44.svg?style=for-the-badge&logo=pytest&logoColor=white)](https://pytest.org/)
-[![Delivery Contract](https://img.shields.io/badge/Delivery%20Contract-252%20Columns-B85C38.svg?style=for-the-badge)](file:///Users/ashutoshyadav/Desktop/Hackathon/FuMA-UniHack/member3/delivery/columns.py)
-[![Throughput](https://img.shields.io/badge/Throughput-~10%2C000%20rows%2Fs-success.svg?style=for-the-badge)](file:///Users/ashutoshyadav/Desktop/Hackathon/FuMA-UniHack/member3/scripts/run_benchmark.py)
+[![Delivery Contract](https://img.shields.io/badge/Delivery%20Contract-252%20Columns-B85C38.svg?style=for-the-badge)](member3/delivery/columns.py)
+[![Throughput](https://img.shields.io/badge/Throughput-~10%2C000%20rows%2Fs-success.svg?style=for-the-badge)](member3/scripts/run_benchmark.py)
 
 <p align="center">
   <b>⚡ Ingestion</b> • <b>🏷️ Entity Resolution (®/™)</b> • <b>📐 LOV Specs</b> • <b>✍️ 5 Copy Formulas</b> • <b>🛡️ 252-Column Gate</b> • <b>📊 Modernist UI</b>
@@ -124,7 +124,7 @@ graph TD
     subgraph CoreTier["⚙️ TIER 3: DOMAIN PROCESSING ENGINES"]
         subgraph M1["👤 Member 1: fuma_rules (Master Data & Normalization)"]
             M1_Clean["Sanitizer (clean_placeholder, clean_part_desc)"]
-            M1_Brand["RapidFuzz Matcher (27k Catalog + Legal ®/™)"]
+            M1_Brand["RapidFuzz Matcher (27k Catalog + Legal Trademarks)"]
             M1_UOM["UOM Standardizer & Decimal-to-Trade-Fraction"]
         end
         
@@ -137,13 +137,13 @@ graph TD
         end
     end
 
-    APIClient ==>|HTTP REST JSON / Multipart| Routes
-    PipeSvc ==>|1. Raw Dict| M1_Clean
+    APIClient -->|"HTTP REST JSON / Multipart"| Routes
+    PipeSvc -->|"1. Raw Dict"| M1_Clean
     M1_Clean --> M1_Brand --> M1_UOM
-    M1_UOM ==>|2. Normalized Dict| PipeSvc
-    PipeSvc ==>|3. Normalized Dict| M2_Tax
+    M1_UOM -->|"2. Normalized Dict"| PipeSvc
+    PipeSvc -->|"3. Normalized Dict"| M2_Tax
     M2_Tax --> M2_LOV --> M2_Desc --> M2_Eval --> M2_Schema
-    M2_Schema ==>|4. Enriched ProductRecord| PipeSvc
+    M2_Schema -->|"4. Enriched ProductRecord"| PipeSvc
 ```
 
 ---
@@ -166,19 +166,19 @@ sequenceDiagram
     UI->>UI: Parse headers locally & verify 6 mandatory columns
     UI->>API: POST /api/upload (or POST /api/demo/sample)
     API->>API: Validate file size (<=8MB) & header integrity
-    API-->>UI: 200 OK {job_id: "job_20260821_...", total: 1000, status: "uploaded"}
+    API-->>UI: 200 OK: job_id, total rows, status uploaded
 
     %% Step 2: Trigger Batch
-    UI->>API: POST /api/enrich {job_id: "...", mode: "full"}
+    UI->>API: POST /api/enrich with job_id and mode full
     API->>Worker: Spawn daemon thread JobStore.run_job(job_id)
-    API-->>UI: 200 OK {job_id: "...", status: "processing"}
+    API-->>UI: 200 OK: job_id, status processing
 
     %% Step 3: Async Batch Processing Loop
-    loop Threaded Pipeline (1,000 rows @ ~10,000 rows/s)
+    loop Threaded Pipeline (1,000 rows at ~10,000 rows/s)
         Worker->>M1: process_item(raw_row)
-        M1-->>Worker: {CLEAN_DESC, BRAND_NAME(®/™), STANDARDIZED_DIMENSIONS}
+        M1-->>Worker: Clean desc, Brand with trademarks, UOM
         Worker->>M2: enrich_single_item(normalized)
-        M2-->>Worker: {classpath, attributes, 5 descriptions, confidence_score}
+        M2-->>Worker: Classpath, attributes, 5 descriptions, confidence
         Worker->>Gate: Validate against ProductRecord schema & quality rules
         Gate-->>Worker: Quality Flags (invoice_pass, mobile_pass, review_reasons)
         Worker->>Gate: Map to exact 252-column delivery layout (50 attribute slots)
@@ -187,22 +187,22 @@ sequenceDiagram
     %% Step 4: Progress Polling
     loop Polling every 250ms
         UI->>API: GET /api/jobs/{id}
-        API-->>UI: {processed: 450, total: 1000, progress: 45, status: "processing"}
+        API-->>UI: Return processed count, progress percentage, status
     end
 
-    Worker-->>API: Batch Complete (status: "completed_with_review")
+    Worker-->>API: Batch Complete (status: completed_with_review)
     UI->>API: GET /api/jobs/{id}
-    API-->>UI: {processed: 1000, total: 1000, progress: 100, status: "completed_with_review"}
+    API-->>UI: Return 100% complete status
 
     %% Step 5: Dashboard Analytics
     UI->>API: GET /api/jobs/{id}/metrics
-    API-->>UI: Return KPIs, pass rates, confidence histogram, ground-truth benchmark
+    API-->>UI: Return KPIs, pass rates, confidence histogram, benchmark
     UI->>User: Render Dashboard (KPI Grid, Quality Plates, Results Table)
 
     %% Step 6: 3-Way Diff Detail
     opt Inspect Single Row Diff
-        User->>UI: Click on Table Row (row_id = 1)
-        UI->>API: GET /api/jobs/{id}/results/1
+        User->>UI: Click on Table Row
+        UI->>API: GET /api/jobs/{id}/results/{row_id}
         API-->>UI: Return Enriched Record + Matched Ground Truth Row
         UI->>User: Display 3-Way Side-by-Side Diff (Raw vs Enriched vs Ground Truth)
     end
@@ -211,15 +211,15 @@ sequenceDiagram
     opt Human Review Queue
         User->>UI: Open Review Queue (/review)
         UI->>API: GET /api/jobs/{id}/review
-        User->>UI: Select Action ("approve" / "override") + enter comment
-        UI->>API: POST /api/jobs/{id}/review/1 {action: "approve", comment: "Verified with supplier"}
-        API-->>UI: {row_id: 1, review: {needs_review: false, decision: "approve"}}
+        User->>UI: Select Action (approve / override) + enter comment
+        UI->>API: POST /api/jobs/{id}/review/{row_id}
+        API-->>UI: Return updated review state
     end
 
     %% Step 8: 252-Column Export
-    User->>UI: Click "Export 252-Column File" (CSV / XLSX)
+    User->>UI: Click Export 252-Column File (CSV / XLSX)
     UI->>API: GET /api/jobs/{id}/export/status
-    API-->>UI: {valid: true, delivery_columns: 252, errors: []}
+    API-->>UI: Return pre-export validation result
     UI->>API: GET /api/jobs/{id}/export.csv (or export.xlsx)
     API->>Gate: Pre-export column & row structure gate
     API-->>UI: Binary Stream (utf-8-sig CSV or styled XLSX)
@@ -238,12 +238,12 @@ flowchart TD
         direction TB
         BrowserA["🌐 User Browser (http://127.0.0.1:8000)"]
         UvicornServer["⚡ Uvicorn / FastAPI Application (Port 8000)"]
-        APIRouteGroup["/api/* ➔ JSON API Router"]
-        StaticMount["/ and /assets ➔ Static SPA Mount (member3/frontend/dist)"]
+        APIRouteGroup["JSON API Router (/api/*)"]
+        StaticMount["Static SPA Mount (/ and /assets)"]
         
-        BrowserA -->|All Traffic (UI & Data)| UvicornServer
-        UvicornServer -->|API Calls| APIRouteGroup
-        UvicornServer -->|Static HTML/JS/CSS| StaticMount
+        BrowserA -->|"All HTTP Traffic"| UvicornServer
+        UvicornServer -->|"API Calls"| APIRouteGroup
+        UvicornServer -->|"Static SPA Files from dist/"| StaticMount
     end
 
     subgraph OptionB["🛠️ DUAL-PROCESS DEV TOPOLOGY (Port 5173 + 8000)"]
@@ -252,9 +252,9 @@ flowchart TD
         ViteServer["⚡ Vite Dev Server (Port 5173 - Hot Reload)"]
         FastAPIServer["⚡ FastAPI API Server (Port 8000)"]
         
-        BrowserB -->|Page & HMR WebSocket| ViteServer
-        BrowserB -->|API Fetch (/api/*)| ViteServer
-        ViteServer -->|Reverse Proxy /api ➔ http://127.0.0.1:8000| FastAPIServer
+        BrowserB -->|"UI Assets and HMR"| ViteServer
+        BrowserB -->|"API Fetch /api/*"| ViteServer
+        ViteServer -->|"Reverse Proxy /api to Port 8000"| FastAPIServer
     end
 ```
 
@@ -262,29 +262,29 @@ flowchart TD
 
 ### 4.2 Screen State Machine & View Flow
 
-The user moves through a deterministic linear state machine managed in [`src/App.tsx`](file:///Users/ashutoshyadav/Desktop/Hackathon/FuMA-UniHack/member3/frontend/src/App.tsx):
+The user moves through a deterministic linear state machine managed in [`member3/frontend/src/App.tsx`](member3/frontend/src/App.tsx):
 
 ```mermaid
 stateDiagram-v2
-    [*] --> upload : Application Launch
+    [*] --> upload
     
-    state "UploadPage.tsx (Ingest & Validate)" as upload
-    state "ProcessingPage.tsx (Worker & Real-Time Stats)" as processing
-    state "DashboardPage.tsx (Operations & Analytics)" as dashboard
-    state "ProductDetailPage.tsx (3-Way Diff & Decisions)" as detail
-    state "ReviewPage.tsx (Human Review Exception Queue)" as review
-    state "ExportPage.tsx (Validation Gate & Download)" as export
+    state "Upload Screen (Ingest & Validate)" as upload
+    state "Processing Screen (Live Progress & Stats)" as processing
+    state "Dashboard Screen (Operations & Analytics)" as dashboard
+    state "Detail Screen (3-Way Side-by-Side Diff)" as detail
+    state "Review Screen (Human Exception Queue)" as review
+    state "Export Screen (252-Column Validation Gate)" as export
 
-    upload --> processing : onStart(jobId, filename) -> Ingestion Complete
-    processing --> dashboard : onComplete() -> Progress reaches 100%
-    dashboard --> detail : onOpenRow(rowId) -> Click Table Row
-    detail --> dashboard : onBack() -> Return to Table
-    dashboard --> review : onNavigate('review') -> Click Review Queue
-    review --> detail : onOpenRow(rowId) -> Inspect Flagged Item
-    review --> dashboard : onNavigate('dashboard') -> Return
-    dashboard --> export : onNavigate('export') -> Click Export Delivery
-    export --> dashboard : onNavigate('dashboard') -> Return
-    export --> [*] : Download 252-Col CSV / XLSX
+    upload --> processing : Ingest Complete
+    processing --> dashboard : Progress 100%
+    dashboard --> detail : Inspect Row
+    detail --> dashboard : Return
+    dashboard --> review : Open Queue
+    review --> detail : Inspect Flagged Item
+    review --> dashboard : Return
+    dashboard --> export : Open Export Gate
+    export --> dashboard : Return
+    export --> [*] : Download CSV / XLSX
 ```
 
 ---
@@ -317,15 +317,15 @@ graph TD
     
     subgraph Components["Shared UI Components (src/components/)"]
         Plate["Plate.tsx (Machined Card Container)"]
-        Button["Button.tsx (Terracotta / Outline Buttons)"]
-        KpiGrid["KpiGrid.tsx (Total, Success, Invoice %, Mobile %)"]
-        QualityGrid["QualityGrid.tsx (Schema, Specific %, Attribute %)"]
+        Button["Button.tsx (Action Buttons)"]
+        KpiGrid["KpiGrid.tsx (Executive KPI Grid)"]
+        QualityGrid["QualityGrid.tsx (Quality Scorecard Grid)"]
         ResultsTable["ResultsTable.tsx (Paginated Searchable Grid)"]
-        DiffPanel["DiffPanel.tsx (3-Way Side-by-Side Comparison)"]
+        DiffPanel["DiffPanel.tsx (3-Way Side-by-Side Panel)"]
         ConfidenceChart["ConfidenceChart.tsx (Histogram Distribution)"]
-        StatusChart["StatusChart.tsx (Status Ratio Pie)"]
+        StatusChart["StatusChart.tsx (Status Ratio Chart)"]
         ReviewFilters["ReviewFilters.tsx (Category Filter Chips)"]
-        StatChip["StatChip.tsx (Technical Indicator Badges)"]
+        StatChip["StatChip.tsx (Technical Badges)"]
     end
     
     P_Dash --> KpiGrid
@@ -404,7 +404,7 @@ Every error response emitted by FastAPI conforms to a deterministic JSON contrac
 }
 ```
 
-The frontend [`src/api/client.ts`](file:///Users/ashutoshyadav/Desktop/Hackathon/FuMA-UniHack/member3/frontend/src/api/client.ts) intercepts this structure and raises a typed `ApiError`, which is displayed in an alert container without crashing the SPA.
+The frontend [`member3/frontend/src/api/client.ts`](member3/frontend/src/api/client.ts) intercepts this structure and raises a typed `ApiError`, which is displayed in an alert container without crashing the SPA.
 
 ---
 
@@ -473,7 +473,7 @@ All endpoints are mounted under `/api`.
 | :--- | :--- | :--- | :--- | :--- |
 | `GET` | `/api/health` | Service liveness & column contract | None | `{"status": "ok", "service": "fuma-api", "delivery_columns": 252}` |
 | `POST` | `/api/upload` | Ingest supplier CSV or XLSX | Multipart `file: File` | `{"job_id", "filename", "rows", "columns", "status"}` |
-| `POST` | `/api/demo/sample` | Ingest bundled 1,000-row sample | None | `{"job_id", "filename", "rows": 1000, "status"}` |
+| `POST` | `/api/demo/sample` | Ingest bundled 1,000-row sample | None | `{"job_id", "filename", "rows": 1000, "status": "uploaded"}` |
 | `POST` | `/api/enrich` | Trigger async background batch | `{"job_id": str, "mode": "full"}` | `{"job_id", "status": "processing"}` |
 | `GET` | `/api/jobs/{id}` | Poll progress & counters | None | `{"job_id", "status", "total", "processed", "progress", ...}` |
 | `GET` | `/api/jobs/{id}/results` | Paginated & searchable rows | `?page=1&page_size=50&status=all&search=faucet` | `{"page", "page_size", "total", "rows": RowResult[]}` |
@@ -501,7 +501,7 @@ All endpoints are mounted under `/api`.
 
 ## 📊 8. The 252-Column Delivery File Standard
 
-Downstream enterprise distribution systems strictly reject files with inconsistent width. FuMA locks the layout in [`member3/delivery/columns.py`](file:///Users/ashutoshyadav/Desktop/Hackathon/FuMA-UniHack/member3/delivery/columns.py):
+Downstream enterprise distribution systems strictly reject files with inconsistent width. FuMA locks the layout in [`member3/delivery/columns.py`](member3/delivery/columns.py):
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
@@ -534,9 +534,9 @@ Downstream enterprise distribution systems strictly reject files with inconsiste
 
 ```mermaid
 graph LR
-    EnrichRow["Enriched Row"] --> RuleCheck{"Confidence < 80% OR<br/>Rule Violation?"}
-    RuleCheck -- "No (100% Valid)" --> Success["Status: 'success' ➔ Direct to Export"]
-    RuleCheck -- "Yes" --> FlagReview["Status: 'review'<br/>Tagged with Review Categories"]
+    EnrichRow["Enriched Row"] --> RuleCheck{"Confidence < 80% OR Rule Violation?"}
+    RuleCheck -->|"No: 100% Valid"| Success["Status: success ➔ Direct to Export"]
+    RuleCheck -->|"Yes: Flagged"| FlagReview["Status: review ➔ Tagged with Categories"]
     
     subgraph Categories["Review Category Taxonomy"]
         C1["low_confidence (<80.0%)"]
@@ -558,75 +558,114 @@ graph LR
 ## 🗂️ 10. Complete Repository Map & File Inventory
 
 ```
-/Users/ashutoshyadav/Desktop/Hackathon/
-├── README.md                                    # 📖 Master system documentation
-├── DESIGN.md                                    # 🎨 Industrial Modernist UI design system tokens
-├── FuMA_Master_Architecture_and_Timeline.md     # 📐 Architecture blueprint & timeline
-├── FuMA_Verification_and_QA_Plan.md             # 🧪 QA test plan & threshold matrix
-├── UniHack_Solution_Guide_Exact.md              # 📜 Solution guide & rule definitions
-├── Unihack_ Expected Output - Delivery Format.csv # 📊 252-column ground truth reference
-├── Unihack_ Sample Dataset - Input.csv         # 📥 1,000-row supplier sample dataset
+FuMA-UniHack/
+├── README.md                                    # 📖 Master system architecture & operational guide
+├── .gitignore                                   # 🚫 Git ignore configuration
+├── docs/                                        # 📑 System specifications & execution plans
+│   └── superpowers/
+│       └── plans/
+│           └── 2026-08-21-member3-api-ui-delivery.md # 📐 Implementation design plan
 │
-└── FuMA-UniHack/                                # 💻 Main Codebase Root
-    ├── fuma_rules/                              # 👤 Member 1: Master Data & Normalization
-    │   ├── sanitizer.py                         # Input sanitization & placeholder cleaning
-    │   ├── brand_matcher.py                     # RapidFuzz brand & mfg entity matcher
-    │   ├── uom_standardizer.py                  # UOM standardizer & decimal-to-fraction converter
-    │   └── stage1_master_data.py                # Stage 1 pipeline orchestrator
+├── fuma_rules/                                  # 👤 Member 1: Master Data & Normalization
+│   ├── __init__.py                              # Module initialization
+│   ├── README.md                                # Member 1 technical documentation
+│   ├── sanitizer.py                             # Input sanitization & placeholder cleaning
+│   ├── brand_matcher.py                         # RapidFuzz brand & mfg entity matcher (27k catalog + ®/™)
+│   ├── uom_standardizer.py                      # UOM standardizer & decimal-to-fraction converter
+│   ├── stage1_master_data.py                    # Stage 1 pipeline orchestrator
+│   └── benchmark.py                             # Member 1 evaluation benchmark
+│
+├── fuma_engine/                                 # 👤 Member 2: Extraction & Description Formulas
+│   ├── __init__.py                              # Module initialization
+│   ├── schema.py                                # Pydantic ProductRecord schema definition
+│   ├── taxonomy_classifier.py                   # Classpath & UNSPSC rule classifier
+│   ├── attribute_extractor.py                   # LOV-constrained category spec extractor
+│   ├── description_builder.py                   # 5 multichannel description generators
+│   ├── confidence_evaluator.py                  # Quality & confidence scoring engine
+│   ├── benchmark_metrics.py                     # Member 2 scoring utilities
+│   └── pipeline_interface.py                    # Member 2 batch & single-item entrypoint
+│
+└── member3/                                     # 👤 Member 3: API, UI & 252-Column Delivery
+    ├── __init__.py                              # Module initialization
+    ├── README.md                                # Member 3 technical overview & run instructions
+    ├── CONTRACT.md                              # Frozen interface & data contract specifications
+    ├── requirements.txt                         # Python dependencies
     │
-    ├── fuma_engine/                             # 👤 Member 2: Extraction & Descriptions
-    │   ├── schema.py                            # Pydantic ProductRecord schema definition
-    │   ├── taxonomy_classifier.py               # Classpath & UNSPSC rule classifier
-    │   ├── attribute_extractor.py               # Category spec & attribute extractor
-    │   ├── description_builder.py               # 5 multichannel description generators
-    │   ├── confidence_evaluator.py              # Quality & confidence scoring engine
-    │   └── pipeline_interface.py                # Member 2 batch & single-item entrypoint
+    ├── backend/                                 # ⚡ FastAPI Backend Application
+    │   ├── __init__.py                          # Backend module init
+    │   ├── main.py                              # FastAPI app entrypoint & static SPA mounting
+    │   ├── models/                              # Pydantic request models
+    │   │   ├── __init__.py
+    │   │   └── api_models.py                    # Request body schemas
+    │   ├── routes/                              # REST API route handlers
+    │   │   ├── __init__.py
+    │   │   └── api.py                           # 13 REST API endpoints
+    │   └── services/                            # Backend business logic services
+    │       ├── __init__.py
+    │       ├── pipeline_service.py              # Row orchestrator & error isolation gate
+    │       ├── batch_service.py                 # Thread-safe in-memory job registry & worker
+    │       └── metrics_service.py               # KPIs, histograms & ground-truth benchmarker
     │
-    └── member3/                                 # 👤 Member 3: API, UI & 252-Column Delivery
-        ├── requirements.txt                     # Python dependencies
-        ├── CONTRACT.md                          # Frozen interface specifications
-        │
-        ├── backend/                             # FastAPI Backend Layer
-        │   ├── main.py                          # FastAPI app entrypoint & SPA static mount
-        │   ├── models/
-        │   │   └── api_models.py                # Pydantic request models
-        │   ├── routes/
-        │   │   └── api.py                       # 13 REST API endpoints
-        │   └── services/
-        │       ├── pipeline_service.py          # Row orchestrator & stage isolation
-        │       ├── batch_service.py             # Thread-safe in-memory job registry & worker
-        │       └── metrics_service.py           # KPIs, histograms & ground-truth benchmarker
-        │
-        ├── delivery/                            # 252-Column Delivery Layer
-        │   ├── columns.py                       # 252 locked delivery column names
-        │   ├── mapper.py                        # ProductRecord -> 252-column mapper
-        │   ├── validators.py                    # Pre-export validation gates
-        │   ├── csv_exporter.py                  # UTF-8-SIG CSV generator
-        │   └── xlsx_exporter.py                 # Styled OpenPyXL workbook generator
-        │
-        ├── frontend/                            # React 18 + TypeScript + Vite SPA
-        │   ├── index.html                       # HTML entrypoint
-        │   ├── vite.config.ts                   # Vite config with /api reverse proxy
-        │   ├── package.json                     # Node dependencies & build scripts
-        │   ├── tailwind.config.js               # Industrial design system Tailwind config
-        │   └── src/
-        │       ├── App.tsx                      # App shell & linear state machine router
-        │       ├── types.ts                     # TypeScript API models & interfaces
-        │       ├── api/client.ts                # Typed fetch API client
-        │       ├── components/                  # Reusable UI components (Plates, Grids, Charts)
-        │       └── pages/                       # 6 screens (Upload, Dashboard, Detail, etc.)
-        │
-        ├── data/                                # Bundled Datasets
-        │   ├── sample_input_1000.csv            # 1,000-row supplier sample dataset
-        │   └── expected_delivery_format.csv     # 252-column ground truth reference
-        │
-        ├── scripts/
-        │   └── run_benchmark.py                 # Pitch scorecard benchmark script
-        │
-        └── tests/                               # PyTest Automated Test Suite (35 tests)
-            ├── test_pipeline.py                 # Stage isolation & validation tests
-            ├── test_delivery.py                 # 252-column mapping & export tests
-            └── test_e2e.py                      # Full API lifecycle tests
+    ├── delivery/                                # 📦 252-Column Exporter Engine
+    │   ├── __init__.py                          # Delivery module init
+    │   ├── columns.py                           # 252 locked delivery column names contract
+    │   ├── mapper.py                            # ProductRecord -> 252-column mapper (50 attribute slots)
+    │   ├── validators.py                        # Pre-export validation gates
+    │   ├── csv_exporter.py                      # UTF-8-SIG CSV generator (Excel BOM support)
+    │   └── xlsx_exporter.py                     # Styled OpenPyXL workbook generator
+    │
+    ├── frontend/                                # 🖥️ React 18 + TypeScript + Vite SPA
+    │   ├── index.html                           # HTML entrypoint
+    │   ├── package.json                         # Node dependencies & build scripts
+    │   ├── package-lock.json                    # Locked dependency tree
+    │   ├── vite.config.ts                       # Vite configuration with /api reverse proxy
+    │   ├── tsconfig.json                        # TypeScript application config
+    │   ├── tsconfig.node.json                   # TypeScript Node environment config
+    │   ├── tailwind.config.js                   # Industrial design system Tailwind config
+    │   ├── postcss.config.js                    # PostCSS configuration
+    │   └── src/                                 # Frontend source code
+    │       ├── App.tsx                          # Main shell & state machine router
+    │       ├── main.tsx                         # React DOM root render
+    │       ├── index.css                        # Design system tokens & typography
+    │       ├── types.ts                         # TypeScript API models & response interfaces
+    │       ├── api/                             # API Client
+    │       │   └── client.ts                    # Strongly typed fetch client
+    │       ├── components/                      # UI Components
+    │       │   ├── AppShell.tsx                 # Layout container
+    │       │   ├── TopBar.tsx                   # Status header
+    │       │   ├── SideNav.tsx                  # 6-screen navigation
+    │       │   ├── Plate.tsx                    # Machined card plate
+    │       │   ├── Button.tsx                   # Industrial action buttons
+    │       │   ├── StatChip.tsx                 # Status indicator chips
+    │       │   ├── KpiGrid.tsx                  # Executive KPI metrics grid
+    │       │   ├── QualityGrid.tsx              # Quality scorecard grid
+    │       │   ├── ResultsTable.tsx             # Paginated searchable results table
+    │       │   ├── DiffPanel.tsx                # 3-Way side-by-side comparison panel
+    │       │   ├── ConfidenceChart.tsx          # Confidence histogram chart
+    │       │   ├── StatusChart.tsx              # Status distribution chart
+    │       │   ├── ReviewFilters.tsx            # Review category filter chips
+    │       │   └── icons.tsx                    # Minimalist geometric SVG icons
+    │       └── pages/                           # 6 Operational Views
+    │           ├── UploadPage.tsx               # 1. Ingest & header validation screen
+    │           ├── ProcessingPage.tsx           # 2. Live progress throughput screen
+    │           ├── DashboardPage.tsx            # 3. Operations hub & analytics dashboard
+    │           ├── ProductDetailPage.tsx        # 4. 3-Way diff viewer & decision screen
+    │           ├── ReviewPage.tsx               # 5. Human exception review queue screen
+    │           └── ExportPage.tsx               # 6. 252-Column export validation & download screen
+    │
+    ├── data/                                    # 📊 Bundled Reference Datasets
+    │   ├── sample_input_1000.csv                # 1,000-row supplier sample dataset
+    │   └── expected_delivery_format.csv         # 252-column ground truth reference format
+    │
+    ├── scripts/                                 # 🛠️ Standalone CLI Tools
+    │   ├── __init__.py
+    │   └── run_benchmark.py                     # Pitch scorecard accuracy benchmark CLI
+    │
+    └── tests/                                   # 🧪 Automated Test Suite (35 tests)
+        ├── __init__.py
+        ├── test_pipeline.py                     # Stage isolation & validation tests
+        ├── test_delivery.py                     # 252-column mapping & export tests
+        └── test_e2e.py                          # Full API lifecycle tests
 ```
 
 ---
@@ -653,7 +692,7 @@ python3 -m venv ~/.fuma-venv/v1
 ~/.fuma-venv/v1/bin/pip install --upgrade pip
 
 # 3. Install all backend dependencies
-~/.fuma-venv/v1/bin/pip install -r /Users/ashutoshyadav/Desktop/Hackathon/FuMA-UniHack/member3/requirements.txt
+~/.fuma-venv/v1/bin/pip install -r member3/requirements.txt
 ```
 
 ---
@@ -662,13 +701,16 @@ python3 -m venv ~/.fuma-venv/v1
 
 ```bash
 # 1. Navigate to the frontend directory
-cd /Users/ashutoshyadav/Desktop/Hackathon/FuMA-UniHack/member3/frontend
+cd member3/frontend
 
 # 2. Install npm dependencies
 npm install
 
 # 3. Compile the production single-page application into dist/
 npm run build
+
+# 4. Return to repo root
+cd ../..
 ```
 
 ---
@@ -679,7 +721,6 @@ npm run build
 FastAPI serves the REST API and the built React SPA simultaneously on port 8000:
 
 ```bash
-cd /Users/ashutoshyadav/Desktop/Hackathon/FuMA-UniHack
 PYTHONPATH=. ~/.fuma-venv/v1/bin/python -m uvicorn member3.backend.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
@@ -692,12 +733,11 @@ PYTHONPATH=. ~/.fuma-venv/v1/bin/python -m uvicorn member3.backend.main:app --ho
 Run Vite with Instant HMR on port 5173 with proxying to FastAPI on port 8000:
 
 ```bash
-# Terminal 1: Start FastAPI Backend
-cd /Users/ashutoshyadav/Desktop/Hackathon/FuMA-UniHack
+# Terminal 1: Start FastAPI Backend (Port 8000)
 PYTHONPATH=. ~/.fuma-venv/v1/bin/python -m uvicorn member3.backend.main:app --host 127.0.0.1 --port 8000 --reload
 
-# Terminal 2: Start Vite Dev Server
-cd /Users/ashutoshyadav/Desktop/Hackathon/FuMA-UniHack/member3/frontend
+# Terminal 2: Start Vite Dev Server (Port 5173)
+cd member3/frontend
 npm run dev
 ```
 
@@ -726,7 +766,6 @@ npm run dev
 ### 1. Run Automated Test Suite (35 Tests Passing)
 
 ```bash
-cd /Users/ashutoshyadav/Desktop/Hackathon/FuMA-UniHack
 PYTHONPATH=. ~/.fuma-venv/v1/bin/python -m pytest member3/tests -v
 ```
 
@@ -758,7 +797,6 @@ member3/tests/test_e2e.py::test_full_batch_enrichment_and_export PASSED  [100%]
 ### 2. Run the Pitch Scorecard Benchmark
 
 ```bash
-cd /Users/ashutoshyadav/Desktop/Hackathon/FuMA-UniHack
 PYTHONPATH=. ~/.fuma-venv/v1/bin/python -m member3.scripts.run_benchmark
 ```
 
