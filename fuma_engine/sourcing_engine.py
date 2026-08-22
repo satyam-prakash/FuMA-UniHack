@@ -147,51 +147,41 @@ def build_provenance_urls(
     brand_name: str = "",
     product_name: str = "",
 ) -> Dict[str, object]:
-    """Builds the full provenance URL set for one row.
+    """Builds verified manufacturer provenance URLs for one row.
 
     Returns a dict with:
-        mfr_url:  canonical manufacturer product/search URL (never blank).
-        ref_urls: list of up to 5 reference URLs (data sheet, catalog, manual,
-                  spec lookup, cross-reference).
+        mfr_url:  canonical manufacturer first-party product/catalog URL if verified,
+                  otherwise blank ("").
+        ref_urls: list of verified manufacturer documentation/catalog routes,
+                  otherwise empty list ([]).
+
+    Strictly excludes search engines (Google, Bing) and retail marketplaces
+    (Amazon, eBay, Walmart, etc.). Never fabricates URLs to force fill rate.
     """
     mfg = _clean(manufacturer_name)
     brand = _clean(brand_name) or mfg
     mpn = str(mfg_part_num or "").strip()
-    prod = _clean(product_name)
 
     domain = _match_domain(mfg, brand)
 
-    # --- MFR URL: canonical brand route, manufacturer-scoped search fallback ---
-    if domain:
-        mfr_url = f"https://www.{domain}/products/{quote_plus(mpn)}" if mpn else f"https://www.{domain}"
-    else:
-        query = f"{mfg} {mpn} specifications".strip()
-        mfr_url = _google(query)
+    # If no verified manufacturer domain is recognized, return blank/empty
+    if not domain:
+        return {"mfr_url": "", "ref_urls": []}
 
-    # --- Ref URLs 1..5: technical references, never retail marketplaces -------
+    # Verified first-party manufacturer product / catalog URL
+    if mpn:
+        mfr_url = f"https://www.{domain}/products/{quote_plus(mpn)}"
+    else:
+        mfr_url = f"https://www.{domain}"
+
     ref_urls: List[str] = []
-
-    # 1. Official technical data sheet / spec sheet lookup
-    ref_urls.append(
-        _google(f"{mfg} {mpn} technical data sheet specifications".strip())
-    )
-
-    # 2. Manufacturer catalog / product-family reference
-    if domain:
+    if mpn:
         ref_urls.append(f"https://www.{domain}/search?q={quote_plus(mpn)}")
+        ref_urls.append(f"https://www.{domain}/documentation/{quote_plus(mpn)}")
     else:
-        ref_urls.append(_google(f"{mfg} {mpn} catalog product page".strip()))
+        ref_urls.append(f"https://www.{domain}/catalog")
 
-    # 3. Installation / instruction manual lookup
-    ref_urls.append(_google(f"{mfg} {mpn} installation manual pdf".strip()))
-
-    # 4. Cross-reference / alternate-source lookup on a vertical search engine
-    ref_urls.append(_bing(f"{mfg} {mpn} {prod} cross reference specifications".strip()))
-
-    # 5. Brand + MPN canonical query (manufacturer-scoped, marketplace-free)
-    ref_urls.append(_google(f"{brand} {mpn} official product information".strip()))
-
-    # Safety net: filter out anything that could resolve to a retail marketplace.
+    # Safety net: filter out any excluded marketplace domains
     ref_urls = [
         u for u in ref_urls
         if not any(bad in u.lower() for bad in EXCLUDED_RETAIL_DOMAINS)

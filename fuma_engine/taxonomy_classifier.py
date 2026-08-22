@@ -10,6 +10,152 @@ from typing import Tuple, Optional
 
 # Comprehensive Taxonomy Mapping Rules for Leaf-Level Classpaths
 TAXONOMY_RULES = [
+    # 0. High-Precision Power Tools & Machinery (Specific categories)
+    {
+        "keywords": ["cross line laser", "line laser", "laser - green", "laser green", "cross line", "laser level", "plumb spots", "3 spot", "5 spot", "laser"],
+        "classpath": "Test & Measurement > Measuring & Layout Tools > Laser Levels & Line Lasers",
+        "unspsc": "27111800",
+        "product_name": "Laser Level"
+    },
+    {
+        "keywords": ["raftersquare", "rafter - square", "rafter square", "bigcal", "caliper", "chalk & reel", "chalk reel", "chalk line"],
+        "classpath": "Hand Tools > Measuring & Layout Tools > Squares, Calipers & Chalk Lines",
+        "unspsc": "27111800",
+        "product_name": "Measuring & Layout Tool"
+    },
+    {
+        "keywords": ["voltage detector", "voltage tester", "detector"],
+        "classpath": "Test & Measurement > Electrical Testing > Voltage Detectors & Meters",
+        "unspsc": "41113600",
+        "product_name": "Voltage Detector"
+    },
+    {
+        "keywords": ["hydraulic driver", "surge kit", "screwdriver - autofeed", "autofeed"],
+        "classpath": "Power Tools > Drills & Drivers > Impact Drivers",
+        "unspsc": "27112713",
+        "product_name": "Impact Driver"
+    },
+    {
+        "keywords": ["impact wrench", "impact - wrench", "angle impact", "stubby", "impact - bare tool", "impact"],
+        "classpath": "Power Tools > Fastening Tools > Impact Wrenches",
+        "unspsc": "27112700",
+        "product_name": "Impact Wrench"
+    },
+    {
+        "keywords": ["rachet", "ratchet"],
+        "classpath": "Power Tools > Fastening Tools > Cordless & Electric Ratchets",
+        "unspsc": "27112700",
+        "product_name": "Power Ratchet"
+    },
+    {
+        "keywords": ["sander", "polisher", "band file", "spindle sander", "deos663xcv", "deos"],
+        "classpath": "Power Tools > Woodworking & Metalworking Tools > Power Sanders & Polishers",
+        "unspsc": "27112700",
+        "product_name": "Power Sander"
+    },
+    {
+        "keywords": ["router", "plunge - router", "plunge router"],
+        "classpath": "Power Tools > Woodworking Tools > Routers & Joiners",
+        "unspsc": "27112700",
+        "product_name": "Woodworking Router"
+    },
+    {
+        "keywords": ["planer", "planing machine", "jointer"],
+        "classpath": "Machinery & Equipment > Woodworking Machinery > Planers & Jointers",
+        "unspsc": "23101500",
+        "product_name": "Woodworking Planer"
+    },
+    {
+        "keywords": ["shaper", "stock feeder"],
+        "classpath": "Machinery & Equipment > Woodworking Machinery > Shapers & Feeders",
+        "unspsc": "23101500",
+        "product_name": "Woodworking Shaper"
+    },
+    {
+        "keywords": ["rotary tool", "dremel"],
+        "classpath": "Power Tools > Rotary & Oscillating Tools > Rotary Tool Kits",
+        "unspsc": "27112700",
+        "product_name": "Rotary Tool"
+    },
+    {
+        "keywords": ["string trimmer", "hedge trimmer", "trimmer"],
+        "classpath": "Outdoor Power Equipment > Trimmers & Edgers > String & Hedge Trimmers",
+        "unspsc": "27112700",
+        "product_name": "Power Trimmer"
+    },
+    {
+        "keywords": ["precision blower", "blower"],
+        "classpath": "Outdoor Power Equipment > Blowers & Vacuums > Leaf Blowers",
+        "unspsc": "27112700",
+        "product_name": "Power Blower"
+    },
+    {
+        "keywords": ["dust extractor", "extractor-ct", "paper bag", "dust bag"],
+        "classpath": "Power Tools > Dust Collection & Vacuums > Dust Extractors & Filters",
+        "unspsc": "47121600",
+        "product_name": "Dust Extractor"
+    },
+    {
+        "keywords": ["jobsite speaker", "bluetooth speaker", "speaker"],
+        "classpath": "Jobsite Equipment > Jobsite Radios & Electronics > Jobsite Speakers",
+        "unspsc": "52161512",
+        "product_name": "Jobsite Speaker"
+    },
+    {
+        "keywords": ["mechanics set", "packout 15pc", "packout 30pc", "wrench set", "universal joint"],
+        "classpath": "Hand Tools > Wrenches & Sockets > Socket & Wrench Sets",
+        "unspsc": "27111700",
+        "product_name": "Socket & Wrench Set"
+    },
+    {
+        "keywords": ["file bstd", "file bstd mill", "file"],
+        "classpath": "Hand Tools > Cutting & Shaping Tools > Files & Rasps",
+        "unspsc": "27111900",
+        "product_name": "Hand File"
+    },
+    {
+        "keywords": ["folding knife", "pocket knife", "knife"],
+        "classpath": "Hand Tools > Knives & Cutting Tools > Utility & Pocket Knives",
+        "unspsc": "27111500",
+        "product_name": "Folding Knife"
+    },
+    {
+        "keywords": ["mini snip", "snip red", "snip green", "snip"],
+        "classpath": "Hand Tools > Snips & Shears > Aviation Snips",
+        "unspsc": "27111500",
+        "product_name": "Aviation Snips"
+    },
+    {
+        "keywords": ["hex plus", "hex key", "allen key"],
+        "classpath": "Hand Tools > Hex & Torx Keys > Hex Key Sets",
+        "unspsc": "27111700",
+        "product_name": "Hex Key Set"
+    },
+    {
+        "keywords": ["hearing protector", "ear muff"],
+        "classpath": "Safety & PPE > Hearing Protection > Ear Muffs",
+        "unspsc": "46181900",
+        "product_name": "Hearing Protector"
+    },
+    {
+        "keywords": ["phone holster", "holster", "tool pouch", "tool belt"],
+        "classpath": "Tool Storage & Belts > Holsters & Pouches > Tool Holsters",
+        "unspsc": "24112400",
+        "product_name": "Tool Holster"
+    },
+    {
+        "keywords": ["starter kit", "flexvolt starter", "2pc kit", "battery kit", "starter"],
+        "classpath": "Power Tools > Power Tool Accessories > Battery & Charger Kits",
+        "unspsc": "26111700",
+        "product_name": "Battery Starter Kit"
+    },
+    {
+        "keywords": ["framing magazine", "collated attach", "screw setter", "plug cutter", "dado pro", "hole dozer", "planer knives", "xtender fence", "fence", "systainer abrasive set", "iridium grip"],
+        "classpath": "Power Tool Accessories > Cutting & Fastening Accessories > Specialty Tool Accessories",
+        "unspsc": "27112800",
+        "product_name": "Power Tool Accessory"
+    },
+
     # 1. Lighting & Luminaires
     {
         "keywords": ["chandelier", "chand lt", "chand"],

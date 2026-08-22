@@ -501,20 +501,32 @@ def extract_attributes(raw_desc: str, mfg_part_num: str = "", category: str = ""
         voltage = "12"
         _add(extracted_attrs, "Voltage Rating", voltage, "V")
 
-    # 4. Electrical: Amperage & Battery Capacity (e.g. 15A, 10A, 12AH)
-    a_match = re.search(r'\b(\d+)\s*(?:a|amp|amps)\b', text, re.IGNORECASE)
-    if a_match:
-        amperage = a_match.group(1)
-        _add(extracted_attrs, "Amperage Rating", amperage, "A")
-    ah_match = re.search(r'\b(\d+(?:\.\d+)?)\s*ah\b', text, re.IGNORECASE)
-    if ah_match:
-        _add(extracted_attrs, "Battery Capacity", ah_match.group(1), "Ah")
+    # 4. Electrical: Amperage & Battery Capacity (e.g. 15A, 10A, 12AH, 12V12AH)
+    v_ah = re.search(r'(\d+)\s*v\s*(\d+(?:\.\d+)?)\s*ah', text, re.IGNORECASE)
+    if v_ah:
+        if not voltage:
+            voltage = v_ah.group(1)
+            _add(extracted_attrs, "Voltage Rating", voltage, "V")
+        _add(extracted_attrs, "Battery Capacity", v_ah.group(2), "Ah")
+    else:
+        a_match = re.search(r'\b(\d+)\s*(?:a|amp|amps)\b', text, re.IGNORECASE)
+        if a_match:
+            amperage = a_match.group(1)
+            _add(extracted_attrs, "Amperage Rating", amperage, "A")
+        ah_match = re.search(r'\b(\d+(?:\.\d+)?)\s*ah\b', text, re.IGNORECASE)
+        if ah_match:
+            _add(extracted_attrs, "Battery Capacity", ah_match.group(1), "Ah")
 
-    # 5. Color Temperature (27k -> 2700 K, 50k -> 5000 K, 30k -> 3000 K, Multi CCT)
+    # 4b. Battery Group Size (e.g. 8D Battery)
+    b_group = re.search(r'\b(8D|24F|27F|31|34|35|48|49|51R|65|78)\s*Battery\b', text, re.IGNORECASE)
+    if b_group:
+        _add(extracted_attrs, "Battery Group Size", b_group.group(1).upper())
+
+    # 5. Color Temperature (27k -> 2700 K, 50k -> 5000 K, 30k -> 3000 K, 5CCT, Multi CCT)
     k_match = re.search(r'\b(\d{1,2})k\b', text, re.IGNORECASE)
     if k_match:
         _add(extracted_attrs, "Color Temperature", f"{k_match.group(1)}00", "K")
-    elif re.search(r'\bmulti cct\b', text, re.IGNORECASE):
+    elif re.search(r'\b(?:multi cct|5cct|selectable cct)\b', text, re.IGNORECASE):
         _add(extracted_attrs, "Color Temperature", "Selectable CCT")
 
     # 6. Bulb Shape / Base (BR30, A19, PAR38, Cand, Med)
@@ -593,36 +605,42 @@ def extract_attributes(raw_desc: str, mfg_part_num: str = "", category: str = ""
             _add(extracted_attrs, "Length", val, "ft")
             dimensions["length"] = val
         else:
-            single_in = re.search(r'(' + _NUM + r')\s*(?:"|in\b|inches\b|inch\b)', text, re.IGNORECASE)
-            if single_in:
-                val = _norm_num(single_in.group(1))
-                _add(extracted_attrs, "Diameter / Size", val, "in")
-                dimensions["diameter"] = val
+            spindle_m = re.search(r'(' + _NUM + r')\s*(?:\"|in\b|inch)?\s*(?:spindle|arbor|shank|collet)', text, re.IGNORECASE)
+            if spindle_m:
+                val = _norm_num(spindle_m.group(1))
+                _add(extracted_attrs, "Arbor / Spindle Size", val, "in")
+                dimensions["arbor"] = val
             else:
-                # Pipe size: fraction/number directly attached to a fitting noun
-                # (e.g. `3/8 CPLG`, `1/2 INCH ELBOW`) - fixes dropped numerators.
-                pipe = re.search(
-                    '(' + _NUM + r')\s*[-]?\s*(?:' + "|".join(_PIPE_NOUNS) + r')\b',
-                    text,
-                    re.IGNORECASE,
-                )
-                if pipe:
-                    val = _norm_num(pipe.group(1))
+                single_in = re.search(r'(' + _NUM + r')\s*(?:"|in\b|inches\b|inch\b)', text, re.IGNORECASE)
+                if single_in:
+                    val = _norm_num(single_in.group(1))
                     _add(extracted_attrs, "Diameter / Size", val, "in")
                     dimensions["diameter"] = val
                 else:
-                    # True size range (e.g. "fits 2-4 in"); rejects fractions
-                    # like 50-1/4 and MPN fragments like 332-080.
-                    range_match = re.search(
-                        r'(?<![\w./-])(\d+)\s*-\s*(\d+)(?![\w./-])', text
+                    # Pipe size: fraction/number directly attached to a fitting noun
+                    # (e.g. `3/8 CPLG`, `1/2 INCH ELBOW`) - fixes dropped numerators.
+                    pipe = re.search(
+                        '(' + _NUM + r')\s*[-]?\s*(?:' + "|".join(_PIPE_NOUNS) + r')\b',
+                        text,
+                        re.IGNORECASE,
                     )
-                    if range_match:
-                        _add(
-                            extracted_attrs,
-                            "Size Range",
-                            f"{range_match.group(1)} - {range_match.group(2)}",
-                            "in",
+                    if pipe:
+                        val = _norm_num(pipe.group(1))
+                        _add(extracted_attrs, "Diameter / Size", val, "in")
+                        dimensions["diameter"] = val
+                    else:
+                        # True size range (e.g. "fits 2-4 in"); rejects fractions
+                        # like 50-1/4 and MPN fragments like 332-080.
+                        range_match = re.search(
+                            r'(?<![\w./-])(\d+)\s*-\s*(\d+)(?![\w./-])', text
                         )
+                        if range_match:
+                            _add(
+                                extracted_attrs,
+                                "Size Range",
+                                f"{range_match.group(1)} - {range_match.group(2)}",
+                                "in",
+                            )
 
     # 10. Grit Grade (P80, P120, 60G, 80 Grit)
     grit = re.search(r'\b(P\d{2,4}|\d{2,3}\s*Grit|\d{2,3}G)\b', text, re.IGNORECASE)
@@ -648,6 +666,64 @@ def extract_attributes(raw_desc: str, mfg_part_num: str = "", category: str = ""
             finish = canonical
             _add(extracted_attrs, "Color / Finish", finish)
             break
+    if not finish and mfg_part_num:
+        # Check MPN suffix for standard manufacturer finish codes
+        mpn_upper = mfg_part_num.upper()
+        mpn_finish_map = [
+            ("BKCLR", "Black / Clear"), ("BKCS", "Black / Clear Seeded Glass"),
+            ("DBK", "Black"), ("CPZ", "Champagne Bronze"), ("AVI", "Anvil Iron"),
+            ("BSS", "Stainless Steel"), ("SST", "Stainless Steel"), ("SS", "Stainless Steel"),
+            ("NI", "Brushed Nickel"), ("BN", "Brushed Nickel"), ("BK", "Black"),
+            ("WH", "White"), ("CH", "Chrome"), ("BRS", "Brass"), ("SBE", "Black"),
+            ("SJP", "Juniper"), ("KPS", "Stainless Steel"), ("SPS", "Stainless Steel"),
+            ("WE", "White"), ("BE", "Black"), ("WHA", "White"),
+        ]
+        for code, canonical in mpn_finish_map:
+            if mpn_upper.endswith(code):
+                finish = canonical
+                _add(extracted_attrs, "Color / Finish", finish)
+                break
+
+    # 13b. Power Tools & Machinery Specifications
+    drive_m = re.search(r'(' + _NUM + r')\s*(?:\"|in\b|inch)?\s*(?:drive|impact|rachet|ratchet|hex\s*hydraulic|hex\s*driver|hex)', text, re.IGNORECASE)
+    if drive_m and not _has_label(extracted_attrs, "Drive / Chuck Size"):
+        drv_val = _norm_num(drive_m.group(1))
+        _add(extracted_attrs, "Drive / Chuck Size", drv_val, "in")
+
+    if re.search(r'friction ring', text, re.IGNORECASE):
+        _add(extracted_attrs, "Anvil / Retainer Type", "Friction Ring")
+    elif re.search(r'pin detent', text, re.IGNORECASE):
+        _add(extracted_attrs, "Anvil / Retainer Type", "Pin Detent")
+    elif re.search(r'interchangeable anvil', text, re.IGNORECASE):
+        _add(extracted_attrs, "Anvil / Retainer Type", "Interchangeable Anvil")
+    elif re.search(r'open head', text, re.IGNORECASE):
+        _add(extracted_attrs, "Head Style", "Open Head")
+
+    if re.search(r'\(bare\)|bare tool|tool only|tool - only', text, re.IGNORECASE):
+        _add(extracted_attrs, "Tool Configuration", "Bare Tool (Tool Only)")
+    elif re.search(r'\bkit\b|\b2pc kit\b|starter kit', text, re.IGNORECASE):
+        _add(extracted_attrs, "Tool Configuration", "Kit with Battery & Charger")
+
+    if re.search(r'\bbrushless\b|\bfuel\b', text, re.IGNORECASE):
+        _add(extracted_attrs, "Motor Type", "Brushless")
+
+    hp_m = re.search(r'(' + _NUM + r')\s*hp\b', text, re.IGNORECASE)
+    if hp_m:
+        _add(extracted_attrs, "Horsepower Rating", _norm_num(hp_m.group(1)), "HP")
+
+    phase_m = re.search(r'\b(1ph|1 ph|1-phase|1\s*phase|3ph|3 ph|3-phase)\b', text, re.IGNORECASE)
+    if phase_m:
+        _add(extracted_attrs, "Electrical Phase", "1-Phase" if "1" in phase_m.group(1) else "3-Phase")
+
+    if re.search(r'\b(laser|cross line)\b', text, re.IGNORECASE):
+        if re.search(r'\bgreen\b', text, re.IGNORECASE):
+            _add(extracted_attrs, "Laser Beam Color", "Green")
+        elif re.search(r'\bred\b', text, re.IGNORECASE):
+            _add(extracted_attrs, "Laser Beam Color", "Red")
+        if re.search(r'3 spot', text, re.IGNORECASE):
+            _add(extracted_attrs, "Beam Configuration", "3-Spot")
+        elif re.search(r'5 spot', text, re.IGNORECASE):
+            _add(extracted_attrs, "Beam Configuration", "5-Spot")
 
     # 14. Mounting Type / Fixture Type
     if re.search(r'\b(wall lt|wall light|wall mount)\b', text, re.IGNORECASE):

@@ -127,7 +127,7 @@ def build_mobile_desc(mfg: str, brand: str, mpn: str, product_name: str, attrs: 
         
     mobile = ", ".join(parts)
     
-    # Adaptive padding if < 60 characters
+    # Adaptive padding using only verified specs / taxonomy leaf if < 60 characters
     if len(mobile) < 60 and len(specs) > 1:
         parts.insert(-1, specs[1])
         mobile = ", ".join(parts)
@@ -142,10 +142,6 @@ def build_mobile_desc(mfg: str, brand: str, mpn: str, product_name: str, attrs: 
             parts.insert(1, leaf)
             mobile = ", ".join(parts)
             
-    if len(mobile) < 60:
-        parts.append("Heavy Duty")
-        mobile = ", ".join(parts)
-        
     # Adaptive trimming if > 80 characters
     while len(mobile) > 80 and len(parts) > 3:
         parts.pop(-2)
@@ -192,17 +188,28 @@ def build_long_desc(mfg: str, brand: str, mpn: str, product_name: str, attrs: Di
 
 def build_retail_desc(mfg: str, brand: str, mpn: str, product_name: str, attrs: Dict[str, Any]) -> str:
     """
-    Constructs Consumer / Retail Marketing Description.
+    Constructs Consumer / Retail Marketing Description grounded in verified attributes.
     """
-    brand_clean = brand or mfg or "Quality"
+    brand_clean = (brand or mfg or "").replace("®", "").replace("™", "").strip()
     prod = product_name or "Industrial Product"
+    series = attrs.get("series", "")
     
-    lead = f"The {brand_clean} {prod} (Model: {mpn}) delivers commercial-grade reliability and high-performance operation."
-    features: List[str] = attrs.get("features", [])
-    if features:
-        feature_text = " Key features include " + ", ".join(features) + "."
-        lead += feature_text
-    return lead
+    parts = [brand_clean]
+    if series:
+        parts.append(series)
+    parts.append(prod)
+    if mpn:
+        parts.append(f"(MPN: {mpn})")
+        
+    attr_list: List[AttributeItem] = attrs.get("attributes", [])
+    specs = [f"{a.label}: {a.value} {a.uom}".strip() if a.uom else f"{a.label}: {a.value}".strip() for a in attr_list if a.label not in ('Product Type', 'Application', 'Series')]
+    
+    desc = " ".join(parts)
+    if specs:
+        desc += " featuring " + ", ".join(specs[:4]) + "."
+    else:
+        desc += "."
+    return desc
 
 def _spec_phrase(attrs: Dict[str, Any], skip_labels: tuple = ()) -> str:
     """Returns a compact 'Label: Value uom' phrase from the first usable attribute."""
@@ -223,51 +230,39 @@ def build_marketing_description(
     classpath: str = "",
 ) -> str:
     """
-    Constructs MARKETING_DESCRIPTION: a grounded 2-sentence professional B2B
-    summary built strictly from [BRAND_NAME], [MANUFACTURER_PART_NUMBER],
-    [Classpath] leaf category and extracted specifications. No invented claims.
+    Constructs MARKETING_DESCRIPTION: a grounded professional B2B summary
+    built strictly from verified facts ([BRAND_NAME], [MANUFACTURER_PART_NUMBER],
+    [Classpath] leaf category, and extracted specifications).
+    No invented claims, filler or subjective superlatives.
     """
-    brand_clean = (brand or mfg or "Industrial").replace("®", "").replace("™", "").strip()
-    prod = (product_name or "industrial component").strip()
+    brand_clean = (brand or mfg or "").replace("®", "").replace("™", "").strip()
+    prod = (product_name or "component").strip()
     leaf = classpath.split(">")[-1].strip() if classpath else prod
+    series = attrs.get("series", "")
 
-    # Sentence 1: identity + application context (grounded in classpath).
-    s1 = (
-        f"The {brand_clean} {prod} (MPN: {mpn}) is engineered for dependable "
-        f"performance in {leaf.lower()} applications."
-    )
-
-    # Sentence 2: grounded specification highlights from extracted attributes.
-    highlights: List[str] = []
-    material = attrs.get("material")
-    if material:
-        highlights.append(f"{material} construction")
-    dims = attrs.get("dimensions", {})
-    if dims.get("diameter"):
-        highlights.append(f"a {dims['diameter']} in diameter")
-    elif dims.get("length"):
-        highlights.append(f"a {dims['length']} in length")
-    spec = _spec_phrase(attrs, skip_labels=("Series",))
-    if spec and len(highlights) < 2:
-        highlights.append(f"{spec} rating/configuration")
-
-    series = attrs.get("series")
-    if series and len(highlights) < 2:
-        highlights.append(f"the {series} product line")
-
-    if highlights:
-        s2 = (
-            f"Built with {' and featuring '.join(highlights[:2])}, it delivers "
-            f"consistent, spec-verified results for demanding MRO environments."
-        )
+    # Sentence 1: identity + series + application context
+    if series:
+        s1 = f"{brand_clean} {mpn} {prod.lower()} from the {series} series for {leaf.lower()} applications."
     else:
-        s2 = (
-            f"Manufactured to rigorous quality standards under part number {mpn}, "
-            f"it ensures reliable fit, form and function across industrial jobsites."
-        )
+        s1 = f"{brand_clean} {mpn} {prod.lower()} designed for {leaf.lower()} applications."
 
-    marketing = f"{s1} {s2}"
-    # Keep the field compact and single-line friendly.
+    # Sentence 2: verified specification highlights
+    attr_list: List[AttributeItem] = attrs.get("attributes", [])
+    spec_bullets = []
+    for a in attr_list:
+        if a.label in ("Product Type", "Application", "Series"):
+            continue
+        if a.uom:
+            spec_bullets.append(f"{a.value} {a.uom} {a.label.lower()}")
+        else:
+            spec_bullets.append(f"{a.value} {a.label.lower()}")
+
+    if spec_bullets:
+        s2 = f"Features {' and '.join(spec_bullets[:3])}."
+        marketing = f"{s1} {s2}"
+    else:
+        marketing = s1
+
     return " ".join(marketing.split())
 
 
@@ -280,86 +275,120 @@ def synthesize_features(
     classpath: str = "",
 ) -> List[str]:
     """
-    Synthesizes 3-6 structured ITEM_FEATURES bullet points grounded strictly in
-    the extracted attribute set and taxonomy context:
-      1. Primary material / construction
-      2. Dimensions & fitment
-      3. Performance / application
-      4. Series & compatibility
-    Deterministic, template-driven, and never invents specifications that were
-    not extracted from the source description.
+    Constructs structured ITEM_FEATURES bullet points grounded strictly in the
+    extracted attribute set and verified product specifications:
+      - Material / construction
+      - Dimensions / sizing
+      - Electrical / mechanical ratings
+      - Finish / coating
+      - Series & specific detected features
+    Emits ONLY verified facts. If there are 3 verified features, emits 3 and leaves
+    the remaining slots empty rather than inventing filler.
     """
     features: List[str] = []
-    brand_clean = (brand or mfg or "Industrial").strip()
-    prod = (product_name or "component").strip()
     attr_list: List[AttributeItem] = attrs.get("attributes", [])
     by_label = {a.label.lower(): a for a in attr_list}
 
     # 1. Material / construction
-    material = attrs.get("material")
+    material = attrs.get("material") or (by_label.get("material").value if by_label.get("material") else "")
     if material:
-        features.append(f"Constructed from premium industrial-grade {material}")
+        features.append(f"{material} construction")
 
-    # 2. Dimensions & fitment
+    # 2. Dimensions & sizing
     dims = attrs.get("dimensions", {})
     if dims.get("diameter"):
-        features.append(f"Precise {dims['diameter']} in sizing for exact fitment and drop-in replacement")
+        features.append(f"{dims['diameter']} in diameter")
     elif dims.get("width") and dims.get("length"):
-        features.append(f"Standard {dims['width']} x {dims['length']} in profile for versatile installation")
+        features.append(f"{dims['width']} x {dims['length']} in size")
     elif dims.get("thickness"):
-        features.append(f"Uniform {dims['thickness']} in thickness for consistent fitment")
+        features.append(f"{dims['thickness']} in thickness")
 
-    # 3. Category-specific performance attributes
-    grit = by_label.get("Grit Grade")
-    if grit:
-        features.append(f"Optimized cutting performance with {grit.value} abrasive grit")
-    conn = by_label.get("Connection Type 1") or by_label.get("Connection Type")
-    if conn:
-        features.append(f"Features standard {conn.value} connection type for secure installation")
-    press = by_label.get("Pressure Class")
-    if press:
-        features.append(f"Rated for {press.value} service pressure in demanding plumbing systems")
-    volt = by_label.get("Voltage Rating")
+    # 3. Electrical & mechanical ratings
+    volt = by_label.get("voltage rating")
     if volt:
-        features.append(f"Operates at standard {volt.value}V for broad jobsite compatibility")
-    thread = by_label.get("Thread Size")
+        features.append(f"{volt.value} V electrical rating")
+    amp = by_label.get("amperage rating")
+    if amp:
+        features.append(f"{amp.value} A amperage rating")
+    cap = by_label.get("battery capacity")
+    if cap:
+        features.append(f"{cap.value} Ah battery capacity")
+    bgrp = by_label.get("battery group size")
+    if bgrp:
+        features.append(f"Group {bgrp.value} battery size")
+    fuel = by_label.get("fuel type")
+    if fuel:
+        features.append(f"{fuel.value} fuel source")
+    pwr = by_label.get("power source")
+    if pwr:
+        features.append(f"{pwr.value} powered operation")
+    cct = by_label.get("color temperature")
+    if cct:
+        features.append(f"{cct.value} color temperature")
+    cycles = by_label.get("number of wash cycles")
+    if cycles:
+        features.append(f"{cycles.value} wash cycles")
+    press = by_label.get("pressure class")
+    if press:
+        features.append(f"{press.value} pressure rating")
+    grit = by_label.get("grit grade")
+    if grit:
+        features.append(f"{grit.value} abrasive grit")
+    conn = by_label.get("connection type 1") or by_label.get("connection type")
+    if conn:
+        features.append(f"{conn.value} connection")
+    thread = by_label.get("thread size")
     if thread:
-        features.append(f"Precision-rolled {thread.value} threads for secure fastening")
+        features.append(f"{thread.value} thread size")
+    hp = by_label.get("horsepower rating")
+    if hp:
+        features.append(f"{hp.value} HP motor rating")
+    mot = by_label.get("motor type")
+    if mot:
+        features.append(f"{mot.value} motor")
+    drv = by_label.get("drive / chuck size")
+    if drv:
+        features.append(f"{drv.value} in drive size")
+    anv = by_label.get("anvil / retainer type")
+    if anv:
+        features.append(f"{anv.value} anvil")
+    cfg = by_label.get("tool configuration")
+    if cfg:
+        features.append(f"{cfg.value}")
+    lbeam = by_label.get("laser beam color")
+    if lbeam:
+        features.append(f"{lbeam.value} laser beam")
+    bcfg = by_label.get("beam configuration")
+    if bcfg:
+        features.append(f"{bcfg.value} beam configuration")
+    pkg = by_label.get("package quantity")
+    if pkg:
+        features.append(f"Pack of {pkg.value}")
 
-    # 4. Series / compatibility
+    # 4. Finish / Mounting
+    finish = attrs.get("finish") or (by_label.get("color / finish").value if by_label.get("color / finish") else "")
+    if finish:
+        features.append(f"{finish} finish")
+    mount = attrs.get("mount_type") or (by_label.get("mounting type").value if by_label.get("mounting type") else "")
+    if mount:
+        features.append(f"{mount} mounting")
+
+    # 5. Series
     series = attrs.get("series")
     if series:
-        features.append(f"Part of the {series} series for guaranteed system compatibility")
+        features.append(f"{series} Series")
 
-    # 5. Application grounding from taxonomy leaf
-    if classpath:
-        leaf = classpath.split(">")[-1].strip()
-        features.append(f"Optimized for high-durability {leaf.lower()} and industrial MRO applications")
-    else:
-        features.append("Optimized for high-durability MRO and industrial applications")
+    # 6. Category Application context
+    app = by_label.get("application")
+    if app:
+        features.append(f"Engineered for {app.value} applications")
 
-    # Pad to the 5-bullet benchmark minimum with grounded, non-speculative
-    # statements (delivery requires ITEM_FEATURES_1..5 fully populated).
-    pads = [
-        f"Engineered by {brand_clean} to meet rigorous industrial quality standards",
-        f"Verified against manufacturer part number {mpn} for accurate ordering and traceability",
-        f"Designed for straightforward installation with standard tools and hardware",
-        f"Built to withstand demanding jobsite conditions for long service life",
-        f"Backed by {brand_clean}'s proven reliability in commercial and residential installations",
-        f"Ideal choice for professional contractors and facility maintenance teams",
-    ]
-    for pad in pads:
-        if len(features) >= 5:
-            break
-        if pad not in features:
-            features.append(pad)
-
-    # De-duplicate while preserving order; cap at 6 bullets.
+    # De-duplicate while preserving order; cap at available verified features
     deduped: List[str] = []
     for f in features:
         if f not in deduped:
             deduped.append(f)
-    return deduped[:6]
+    return deduped
 
 
 def generate_all_descriptions(
