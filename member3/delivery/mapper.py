@@ -43,7 +43,11 @@ ENRICHED_COLUMNS = {
     "MFR URL": "mfr_url",
     "Product Name": "product_name",
     "UNSPSC": "unspsc",
+    # Digital asset, derived from the verified BRAND_MPN.jpg convention seen in
+    # the delivery ground truth. Blank when the brand is unresolved.
+    "Product Image": "product_image",
 }
+
 
 #: Ref URL slots the delivery format provides (Ref URL 1..5).
 REF_URL_SLOTS = 5

@@ -17,8 +17,10 @@ Rules:
 - Return blank ("") + review flag when a URL cannot be verified.
 """
 
-from urllib.parse import quote_plus
+import re
 from typing import Dict, List
+from urllib.parse import quote_plus
+
 
 # Verified first-party manufacturer domains (brand registry).
 # Keys are lowercase fragments matched against MANUFACTURER_NAME / BRAND_NAME.
@@ -202,3 +204,34 @@ def build_provenance_urls(
     ][:5]
 
     return {"mfr_url": mfr_url, "ref_urls": ref_urls}
+
+
+# ---------------------------------------------------------------------------
+# Digital assets
+# ---------------------------------------------------------------------------
+
+def _asset_token(value: str) -> str:
+    """Uppercase, underscore-joined token for asset filenames."""
+    cleaned = _clean(value).upper()
+    return re.sub(r"[^A-Z0-9]+", "_", cleaned).strip("_")
+
+
+def build_digital_assets(brand_name: str, mfg_part_num: str) -> Dict[str, str]:
+    """Derives digital-asset filenames from the verified naming convention.
+
+    The delivery ground truth uses ``BRAND_MPN.jpg``
+    (``FRIGIDAIRE_PDSH4816AF.jpg``), so that convention is applied -- but only
+    when BOTH a resolved brand and an MPN exist. A blank brand means the brand
+    itself is unverified, and deriving a filename from an unverified brand would
+    just be a fabricated asset reference with extra steps.
+
+    Returns ``{"product_image": ...}``, blank when it cannot be derived.
+    """
+    brand_token = _asset_token(brand_name)
+    mpn_token = _asset_token(mfg_part_num)
+
+    if not brand_token or not mpn_token:
+        return {"product_image": ""}
+
+    return {"product_image": f"{brand_token}_{mpn_token}.jpg"}
+

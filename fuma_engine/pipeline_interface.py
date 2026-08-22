@@ -2,19 +2,60 @@
 FuMA Pipeline Interface
 Owned by Member 2.
 Provides clean batch and single-item processing functions for Member 3 (API/UI) and Member 1 (Evaluator).
+
+Beyond orchestration this module now computes the two metrics the brief asks for
+but which could not previously be produced:
+
+* **LOV compliance** -- share of emitted attribute values found in the approved
+  List of Values. Reported as ``None`` when no LOV file is loaded, because
+  scoring our own seed vocabulary against itself would be meaningless.
+* **Attribute provenance** -- every attribute is tagged ``evidence`` (parsed from
+  the supplier's own text) or ``inferred`` (derived from the taxonomy we just
+  assigned). "100% attribute coverage" was previously a tautology: the pipeline
+  guarantees at least one attribute exists, so coverage could not be anything
+  else. Splitting the tiers keeps the headline honest.
 """
 
-from typing import Dict, List, Any
+from typing import Any, Dict, List, Optional
+
 import pandas as pd
-from fuma_engine.taxonomy_classifier import classify_taxonomy
+
 from fuma_engine.attribute_extractor import extract_attributes
-from fuma_engine.description_builder import build_all_descriptions, synthesize_features
 from fuma_engine.confidence_evaluator import evaluate_record
-from fuma_engine.sourcing_engine import build_provenance_urls
+from fuma_engine.description_builder import build_all_descriptions, synthesize_features
 from fuma_engine.schema import ProductRecord
+from fuma_engine.sourcing_engine import build_digital_assets, build_provenance_urls
+from fuma_engine.taxonomy_classifier import classify_taxonomy
 
 #: Hard cap matching Member 3's ITEM_FEATURES_1..20 delivery slots.
 MAX_FEATURES = 20
+
+#: Labels produced by taxonomy inference rather than parsed from supplier text.
+#: Kept in the output (they are useful for faceted search) but never counted as
+#: evidence-backed extraction.
+INFERRED_LABELS = frozenset({"Product Type", "Application"})
+
+
+def _lov_compliance(attributes: List[Any], classpath: str) -> Optional[float]:
+    """Fraction of emitted values present in the approved LOV, or None.
+
+    None means "no LOV file loaded" and is reported as such rather than as 0%,
+    so a missing reference file never looks like a quality failure.
+    """
+    try:
+        from fuma_rules.reference_data import is_lov_value, load_reference_bundle
+
+        if not load_reference_bundle().lov_available:
+            return None
+    except Exception:  # noqa: BLE001 - reference layer must never break enrichment
+        return None
+
+    checkable = [a for a in attributes if a.label not in INFERRED_LABELS and a.value]
+    if not checkable:
+        return None
+    hits = sum(1 for a in checkable if is_lov_value(a.value))
+    return round(hits / len(checkable), 4)
+
 
 def enrich_single_item(raw_dict: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -30,8 +71,22 @@ def enrich_single_item(raw_dict: Dict[str, Any]) -> Dict[str, Any]:
     raw_desc = str(raw_dict.get("Part_Desc") or raw_dict.get("part_desc") or raw_dict.get("part_desc_raw") or "").strip()
     mfg = str(raw_dict.get("MANUFACTURER_NAME") or raw_dict.get("Part_Manuf") or raw_dict.get("manufacturer_name") or "").strip()
     raw_brand_val = str(raw_dict.get("E1_Brand") or raw_dict.get("raw_brand") or "").strip()
-    brand = str(raw_dict.get("BRAND_NAME") or raw_dict.get("brand_name") or raw_brand_val).strip()
-    
+
+    # Brand resolution. Member 1 sets BRAND_NAME and deliberately leaves it BLANK
+    # for distributors/co-ops (a co-op is not a brand). A blank must therefore
+    # stay blank -- falling back to the raw supplier field would resurrect the
+    # very placeholders the brief says are not data ("-- Unbranded --").
+    if "BRAND_NAME" in raw_dict:
+        brand = str(raw_dict.get("BRAND_NAME") or "").strip()
+    else:
+        brand = str(raw_dict.get("brand_name") or raw_brand_val).strip()
+    if brand.startswith("--"):  # placeholder, never a real brand
+        brand = ""
+
+
+    # Brand evidence tier from Member 1 (blank when M1 has not run yet).
+    brand_tier = str(raw_dict.get("BRAND_MATCH_TIER") or "").strip()
+
     # 1. Step: Taxonomy Classification
     classpath, unspsc, product_name = classify_taxonomy(raw_desc, mpn, mfg)
     
@@ -39,7 +94,11 @@ def enrich_single_item(raw_dict: Dict[str, Any]) -> Dict[str, Any]:
     extracted = extract_attributes(
         raw_desc, mpn, category=product_name, manufacturer_name=mfg, classpath=classpath
     )
-    
+
+    # 2a. Tag provenance so "coverage" can be reported honestly.
+    for attr in extracted["attributes"]:
+        attr.evidence = "inferred" if attr.label in INFERRED_LABELS else "evidence"
+
     # 2b. Step: Grounded feature synthesis (fills ITEM_FEATURES_1..5+ when
     # external marketing copy is sparse). Detected features come first,
     # synthesized grounded bullets fill up to the delivery slot cap.
@@ -68,13 +127,33 @@ def enrich_single_item(raw_dict: Dict[str, Any]) -> Dict[str, Any]:
     
     # 3. Step: Multi-Channel Description Generation
     descs = build_all_descriptions(item_ctx, extracted)
-    
-    # 4. Step: Quality & Confidence Scoring
-    score, needs_review, reasons = evaluate_record(descs, extracted, classpath, raw_brand=raw_brand_val, raw_desc=raw_desc)
-    
-    # 5. Step: Manufacturer Provenance & Reference URLs (never blank)
+
+    # 4. Step: LOV compliance, then quality & confidence scoring.
+    lov = _lov_compliance(extracted["attributes"], classpath)
+    score, needs_review, reasons = evaluate_record(
+        descs,
+        extracted,
+        classpath,
+        raw_brand=raw_brand_val,
+        raw_desc=raw_desc,
+        brand_tier=brand_tier,
+        brand_name=brand,
+        lov_compliance=-1.0 if lov is None else lov,
+    )
+
+    # 4b. Duplicate flag from Member 1's de-duplication stage.
+    if raw_dict.get("is_duplicate"):
+        dup_of = raw_dict.get("duplicate_of")
+        reasons.append(
+            f"Possible duplicate of row {dup_of} ({raw_dict.get('duplicate_reason', 'match')})"
+        )
+
+    # 5. Step: Manufacturer Provenance & Reference URLs (blank when unverified)
     urls = build_provenance_urls(mfg, mpn, brand_name=item_ctx["brand_name"], product_name=product_name)
-    
+
+    # 5b. Digital assets, only where a verified naming convention exists.
+    assets = build_digital_assets(item_ctx["brand_name"], mpn)
+
     # 6. Build Final Standard Record
     record = ProductRecord(
         mfg_part_num=mpn,
@@ -95,9 +174,14 @@ def enrich_single_item(raw_dict: Dict[str, Any]) -> Dict[str, Any]:
         marketing_description=descs.get("marketing_description", ""),
         mfr_url=str(urls["mfr_url"]),
         ref_urls=[str(u) for u in urls["ref_urls"]],
+        product_image=assets.get("product_image", ""),
         confidence_score=score,
         needs_review=needs_review,
-        review_reasons=reasons
+        review_reasons=reasons,
+        brand_match_tier=brand_tier,
+        lov_compliance=lov,
+        is_duplicate=bool(raw_dict.get("is_duplicate")),
+        duplicate_of=raw_dict.get("duplicate_of"),
     )
     
     return record.model_dump()

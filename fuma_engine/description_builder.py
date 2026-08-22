@@ -89,47 +89,111 @@ def abbreviate_text(text: str) -> str:
     abbrev_words = [ABBREVIATIONS.get(w.upper(), w) for w in words]
     return " ".join(abbrev_words)
 
+#: Invoice spec order, derived from the ground-truth row
+#: "DISHWASHER LEG 5 SST 120V 15A 50-1/4IN":
+#:   item type -> mounting -> cycles -> material -> volts -> amps -> dimension.
+#: The till receipt needs identifying specs, not the brand, so specs outrank
+#: brand once the 40-character budget runs out.
+_INVOICE_SPEC_ORDER = (
+    "Mounting Type",
+    "Number of Wash Cycles",
+    "Grit Grade",
+    "Material",
+    "Body Material",
+    "Color / Finish",
+    "Voltage Rating",
+    "Amperage Rating",
+    "Wattage Rating",
+    "Diameter",
+    "Diameter / Size",
+    "Diameter / Length",
+    "Thickness",
+    "Width",
+    "Length",
+    "Depth With Door Open",
+    "Sound Level",
+)
+
+#: Compact invoice forms. Materials collapse to trade shorthand ("SST" not
+#: "STAINLESS STEEL") to buy characters inside the 40-char limit.
+_INVOICE_VALUE_ABBREV = {
+    "STAINLESS STEEL": "SST",
+    "BRUSHED NICKEL": "BN",
+    "OIL RUBBED BRONZE": "ORB",
+    "CHAMPAGNE BRONZE": "CPZ",
+    "GALVANIZED STEEL": "GALV",
+    "CARBON STEEL": "CS",
+    "ALUMINUM": "ALUM",
+    "COMPOSITE": "COMP",
+    "BUILT-IN": "BLTIN",
+}
+
+
+def _invoice_token(label: str, value: str, uom: str) -> str:
+    """Renders one attribute as a compact ALL-CAPS invoice token.
+
+    Invoice style closes the space between number and unit ("120V", "50-1/4IN")
+    -- this is the one field where the "always space" rule does not apply,
+    matching the ground-truth string.
+    """
+    value = (value or "").strip()
+    if not value:
+        return ""
+    upper = value.upper()
+    upper = _INVOICE_VALUE_ABBREV.get(upper, upper)
+    if uom:
+        return f"{upper}{uom.upper()}"
+    return upper
+
+
 def build_invoice_desc(mfg: str, brand: str, mpn: str, product_name: str, attrs: Dict[str, Any]) -> str:
     """
-    Constructs Invoice Description (<= 40 chars, ALL CAPS).
-    Formula: [BRAND/MFG] [PROD_TYPE] [KEY_SPEC] [MPN]
-    """
-    brand_or_mfg = (brand or mfg or "MRO").replace("®", "").replace("™", "").strip().upper()
-    prod_type = abbreviate_text(product_name or "PART").upper()
-    mpn_clean = (mpn or "").upper()
-    
-    # Try with key spec
-    key_spec = ""
-    if attrs.get("dimensions", {}).get("diameter"):
-        key_spec = f"{attrs['dimensions']['diameter']}IN".replace(" ", "")
-    elif attrs.get("dimensions", {}).get("thickness"):
-        key_spec = f"{attrs['dimensions']['thickness']}IN".replace(" ", "")
-    elif attrs.get("voltage"):
-        key_spec = f"{attrs['voltage']}V"
-    elif attrs.get("material"):
-        key_spec = ABBREVIATIONS.get(attrs["material"].upper(), attrs["material"][:2].upper())
+    Constructs Invoice Description (<= 40 chars, ALL CAPS, no ®/™).
 
-    # Candidate 1: BRAND PROD SPEC MPN
-    parts = [p for p in [brand_or_mfg, prod_type, key_spec, mpn_clean] if p]
-    candidate = " ".join(parts).upper()
-    
-    if len(candidate) <= 40:
-        return candidate
-        
-    # Candidate 2: Drop key_spec
-    parts = [p for p in [brand_or_mfg, prod_type, mpn_clean] if p]
-    candidate = " ".join(parts).upper()
-    if len(candidate) <= 40:
-        return candidate
-        
-    # Candidate 3: Shorten product type
-    parts = [p for p in [brand_or_mfg, mpn_clean] if p]
-    candidate = " ".join(parts).upper()
-    if len(candidate) <= 40:
-        return candidate
-        
-    # Hard truncate to 40 chars
-    return candidate[:40].strip()
+    Formula (per content guidelines / ground truth):
+        [ITEM TYPE] [KEY SPECS in fixed order]
+    e.g. ``DISHWASHER LEG 5 SST 120V 15A 50-1/4IN``
+
+    Specs are appended in priority order while they fit. Brand and MPN are only
+    included when spare budget remains, because a 40-character receipt line is
+    worth more as identifying specs than as a brand name.
+    """
+    prod_type = abbreviate_text(product_name or "PART").upper()
+    attr_list: List[AttributeItem] = attrs.get("attributes", [])
+    by_label = {a.label: a for a in attr_list}
+
+    tokens: List[str] = []
+    for label in _INVOICE_SPEC_ORDER:
+        a = by_label.get(label)
+        if not a:
+            continue
+        token = _invoice_token(a.label, a.value, a.uom)
+        if token and token not in tokens:
+            tokens.append(token)
+
+    # Grow the line spec-by-spec, stopping before the 40-char limit.
+    candidate = prod_type
+    for token in tokens:
+        trial = f"{candidate} {token}".strip()
+        if len(trial) > 40:
+            break
+        candidate = trial
+
+    # Spare budget: add the brand, then the MPN, only if they genuinely fit.
+    brand_or_mfg = (brand or mfg or "").replace("®", "").replace("™", "").strip().upper()
+    if brand_or_mfg and len(f"{brand_or_mfg} {candidate}") <= 40:
+        candidate = f"{brand_or_mfg} {candidate}"
+
+    mpn_clean = (mpn or "").upper()
+    if mpn_clean and len(f"{candidate} {mpn_clean}") <= 40:
+        candidate = f"{candidate} {mpn_clean}"
+
+    # Never emit an empty invoice line: fall back to identity fields.
+    if not candidate.strip():
+        candidate = (f"{brand_or_mfg} {mpn_clean}".strip() or "PART")[:40]
+
+    return candidate.strip()[:40].strip()
+
 
 def build_mobile_desc(mfg: str, brand: str, mpn: str, product_name: str, attrs: Dict[str, Any], classpath: str = "") -> str:
     """
@@ -197,64 +261,184 @@ def build_mobile_desc(mfg: str, brand: str, mpn: str, product_name: str, attrs: 
 
     return mobile
 
+#: Labels that are taxonomy restatements, not product specs. Excluded from
+#: descriptive copy: "Application: Built-In Dishwashers" adds nothing a shopper
+#: cannot already see from the breadcrumb.
+_TAXONOMY_LABELS = ("Product Type", "Application")
+
+#: Labels rendered as a bare value in descriptive copy ("Stainless Steel", not
+#: "Material: Stainless Steel"), matching the ground-truth phrasing.
+_BARE_VALUE_LABELS = frozenset(
+    {
+        "Material",
+        "Body Material",
+        "Color / Finish",
+        "Series",
+        "Edge Profile",
+        "Board Type",
+        "Glass Type",
+        "Installation Type",
+        "Tool Configuration",
+        "Motor Type",
+    }
+)
+
+#: Labels rendered "<value> <uom> <label>" ("47 dBA Sound Level"), which is how
+#: the ground-truth long description reads.
+_VALUE_THEN_LABEL = frozenset(
+    {
+        "Sound Level",
+        "Depth With Door Open",
+        "Number of Wash Cycles",
+        "Max RPM",
+        "Grit Grade",
+        "Pressure Class",
+        "Flow Rate",
+        "Battery Capacity",
+        "Horsepower Rating",
+    }
+)
+
+
+def _spec_clause(a: AttributeItem) -> str:
+    """Renders one attribute as a ground-truth-style clause.
+
+    Three shapes, matching the delivery file:
+      * bare value        -> "Stainless Steel"
+      * value + uom       -> "120 V"
+      * value + uom + lbl -> "47 dBA Sound Level"
+    The space between number and unit is always preserved (Unilog UOM rule).
+    """
+    value = (a.value or "").strip()
+    if not value:
+        return ""
+    uom = (a.uom or "").strip()
+    measure = f"{value} {uom}".strip() if uom else value
+
+    if a.label in _BARE_VALUE_LABELS:
+        return measure
+    if a.label in _VALUE_THEN_LABEL:
+        return f"{measure} {a.label}"
+    if a.label == "Mounting Type":
+        return f"{value} Mounting"
+    if uom:
+        return measure
+    return f"{measure} {a.label}"
+
+
+def _descriptive_attrs(attrs: Dict[str, Any]) -> List[AttributeItem]:
+    """Attributes worth putting in copy: real specs, taxonomy filler removed."""
+    return [
+        a
+        for a in attrs.get("attributes", [])
+        if a.label not in _TAXONOMY_LABELS and (a.value or "").strip()
+    ]
+
+
 def build_short_desc(mfg: str, brand: str, mpn: str, product_name: str, attrs: Dict[str, Any]) -> str:
     """
-    Constructs Short Description / Product Title.
-    Formula: [Brand] [Series] [MPN] [Product Name] [Key Specs]
+    Constructs SHORT_DESC / Product Title.
+
+    Formula from the content guidelines:
+        [Brand®] [Series] [MPN] [Item Type] [Key Attributes]
+    Ground truth:
+        FRIGIDAIRE® Professional Series PDSH4816AF Dishwasher With CleanBoost™,
+        Leg Mounting, 5-Wash Cycle, Stainless Steel
+
+    Brand keeps its ®/™ (this is a web-facing title). Detected feature phrases
+    ("With CleanBoost™") follow the item type, then comma-delimited key specs.
     """
     brand_clean = (brand or mfg or "").strip()
     series = attrs.get("series", "")
     prod = product_name or "Component"
-    
-    specs_parts = []
-    if attrs.get("dimensions", {}).get("diameter"):
-        specs_parts.append(f"{attrs['dimensions']['diameter']} in")
-    if attrs.get("finish"):
-        specs_parts.append(attrs["finish"])
-    if attrs.get("voltage"):
-        specs_parts.append(f"{attrs['voltage']}V")
-        
-    specs_str = " ".join(specs_parts)
-    parts = [brand_clean, series, mpn, prod, specs_str]
-    return " ".join([p for p in parts if p]).strip()
+
+    head_parts = [p for p in (brand_clean, series, mpn, prod) if p]
+    head = " ".join(head_parts)
+
+    # Verified feature phrases sit directly after the item type.
+    feature_phrases = [f for f in (attrs.get("features") or []) if f.startswith("With ")]
+    if feature_phrases:
+        head = f"{head} {feature_phrases[0]}"
+
+    # Key specs, capped so the title stays scannable in a results list.
+    clauses: List[str] = []
+    for a in _descriptive_attrs(attrs):
+        if a.label == "Series":
+            continue  # already in the head
+        clause = _spec_clause(a)
+        if clause and clause not in clauses:
+            clauses.append(clause)
+
+    title = f"{head}, " + ", ".join(clauses[:5]) if clauses else head
+    return _strip_fillers(title.strip())
+
 
 def build_long_desc(mfg: str, brand: str, mpn: str, product_name: str, attrs: Dict[str, Any]) -> str:
     """
-    Constructs Long Description (Specifications String).
+    Constructs LONG_DESC1: the full comma-delimited specification chain.
+
+    Ground truth:
+        FRIGIDAIRE® Dishwasher With CleanBoost™, Professional Series, 5 Wash Cycles,
+        120 V, 15 A, Leg Mounting, 24 in W x 24-1/4 in D, 50-1/4 in Depth With Door
+        Open, 47 dBA Sound Level, Stainless Steel
+
+    Formula: [Brand®] [Item Type] [Features], [Series], [every verified spec].
+    Replaces the previous "Label: Value" debug-style dump, which scored 0%
+    against the delivery file.
     """
-    attr_list: List[AttributeItem] = attrs.get("attributes", [])
-    spec_strings = [f"{a.label}: {a.value} {a.uom}".strip() for a in attr_list]
-    
-    base_info = f"{brand or mfg} {product_name} (MPN: {mpn})"
-    if spec_strings:
-        return f"{base_info} - " + ", ".join(spec_strings)
-    return base_info
+    brand_clean = (brand or mfg or "").strip()
+    prod = product_name or "Component"
+
+    head = f"{brand_clean} {prod}".strip()
+    feature_phrases = [f for f in (attrs.get("features") or []) if f.startswith("With ")]
+    if feature_phrases:
+        head = f"{head} {feature_phrases[0]}"
+
+    clauses: List[str] = []
+    series = attrs.get("series", "")
+    if series:
+        clauses.append(series)
+    for a in _descriptive_attrs(attrs):
+        if a.label == "Series":
+            continue
+        clause = _spec_clause(a)
+        if clause and clause not in clauses:
+            clauses.append(clause)
+
+    if not clauses:
+        return _strip_fillers(f"{head} (MPN: {mpn})".strip())
+
+    return _strip_fillers(f"{head}, " + ", ".join(clauses))
+
 
 def build_retail_desc(mfg: str, brand: str, mpn: str, product_name: str, attrs: Dict[str, Any]) -> str:
     """
-    Constructs Consumer / Retail Marketing Description grounded in verified attributes.
+    Constructs RETAIL_DESC: the customer-facing summary line.
+
+    Ground truth:
+        Professional Series Dishwasher, Leg Mounting, 5-Wash Cycle, Stainless Steel
+
+    Formula: [Series] [Item Type], [top key attributes]. Note it carries NO brand
+    and NO MPN -- it sits beside the brand on a product page, so repeating them
+    wastes the line. Trailing full stop is omitted to match the delivery file.
     """
-    brand_clean = (brand or mfg or "").replace("®", "").replace("™", "").strip()
     prod = product_name or "Industrial Product"
     series = attrs.get("series", "")
-    
-    parts = [brand_clean]
-    if series:
-        parts.append(series)
-    parts.append(prod)
-    if mpn:
-        parts.append(f"(MPN: {mpn})")
-        
-    attr_list: List[AttributeItem] = attrs.get("attributes", [])
-    specs = [f"{a.label}: {a.value} {a.uom}".strip() if a.uom else f"{a.label}: {a.value}".strip() for a in attr_list if a.label not in ('Product Type', 'Application', 'Series')]
-    
-    desc = " ".join(parts)
-    if specs:
-        desc += " featuring " + ", ".join(specs[:4]) + "."
-    else:
-        desc += "."
+
+    head = f"{series} {prod}".strip() if series else prod
+
+    clauses: List[str] = []
+    for a in _descriptive_attrs(attrs):
+        if a.label == "Series":
+            continue
+        clause = _spec_clause(a)
+        if clause and clause not in clauses:
+            clauses.append(clause)
+
+    desc = f"{head}, " + ", ".join(clauses[:4]) if clauses else head
     # Anti-fabrication: strip any banned filler that may have leaked in
     return _strip_fillers(desc)
+
 
 def _spec_phrase(attrs: Dict[str, Any], skip_labels: tuple = ()) -> str:
     """Returns a compact 'Label: Value uom' phrase from the first usable attribute."""

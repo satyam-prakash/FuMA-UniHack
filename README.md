@@ -12,13 +12,18 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6.svg?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-5.4-646CFF.svg?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.4-38B2AC.svg?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
-[![Pytest](https://img.shields.io/badge/Pytest-35%20Passed-449C44.svg?style=for-the-badge&logo=pytest&logoColor=white)](https://pytest.org/)
+[![Pytest](https://img.shields.io/badge/Pytest-98%20Passed-449C44.svg?style=for-the-badge&logo=pytest&logoColor=white)](https://pytest.org/)
 [![Delivery Contract](https://img.shields.io/badge/Delivery%20Contract-252%20Columns-B85C38.svg?style=for-the-badge)](member3/delivery/columns.py)
-[![Throughput](https://img.shields.io/badge/Throughput-~10%2C000%20rows%2Fs-success.svg?style=for-the-badge)](member3/scripts/run_benchmark.py)
+[![Throughput](https://img.shields.io/badge/Throughput-~190%20rows%2Fs-success.svg?style=for-the-badge)](member3/scripts/run_benchmark.py)
 
 <p align="center">
   <b>⚡ Ingestion</b> • <b>🏷️ Entity Resolution (®/™)</b> • <b>📐 LOV Specs</b> • <b>✍️ 5 Copy Formulas</b> • <b>🛡️ 252-Column Gate</b> • <b>📊 Modernist UI</b>
 </p>
+
+**Every badge above is reproducible in one command** — see
+[§12](#-12-verification-automated-tests--pitch-scorecard). Read
+[`FINDINGS_AND_FIXES.md`](FINDINGS_AND_FIXES.md) for the honest scorecard,
+including what this pipeline **cannot** measure and why.
 
 </div>
 
@@ -68,7 +73,15 @@ RAW SUPPLIER FEED:   "3/8 CPLG BRS 150#"
 4. **Strict 252-Column Delivery Format**: Downstream client systems strictly require an unvarying 252-column tabular schema with 50 dedicated attribute triplets.
 
 ### 🟢 The FuMA Solution:
-**FuMA** solves this with a high-performance, 3-member multi-tier architecture combining deterministic fuzzy entity resolution against a 27,000-brand catalog, official List of Values (LOV) extraction, mathematical description generators, a FastAPI orchestration engine, and an Industrial Modernist React UI to deliver **~10,000 rows/second** throughput with **zero hallucination**.
+**FuMA** solves this with a 3-tier architecture: an evidence-ranked entity
+resolver (7 tiers, weak matches capped below the review threshold rather than
+published), reference-data loaders for the supplied master/LOV pack, formula-driven
+description generators, a FastAPI orchestration engine, and an Industrial Modernist
+React UI — processing **~190 rows/second** with **zero fabricated values**.
+
+The governing principle: **every value carries its provenance, and anything we
+cannot verify is left blank and flagged rather than invented.** The brief is
+explicit that *"a fluent description made of invented values scores zero"*.
 
 ---
 
@@ -174,7 +187,7 @@ sequenceDiagram
     API-->>UI: 200 OK: job_id, status processing
 
     %% Step 3: Async Batch Processing Loop
-    loop Threaded Pipeline (1,000 rows at ~10,000 rows/s)
+    loop Threaded Pipeline (1,000 rows at ~190 rows/s)
         Worker->>M1: process_item(raw_row)
         M1-->>Worker: Clean desc, Brand with trademarks, UOM
         Worker->>M2: enrich_single_item(normalized)
@@ -750,10 +763,11 @@ npm run dev
 1. Open **`http://127.0.0.1:8000/`** in your browser.
 2. Click **"Use bundled 1,000-row sample"** on the Ingest screen.
 3. Click **"Start Enrichment (1,000 rows)"**.
-4. Watch the progress bar complete in **under 1 second** (~10,000 rows/second).
+4. Watch the progress bar complete in about **5 seconds** (~190 rows/second).
 5. Explore the **Executive Dashboard**:
    - Verify that **`INVOICE_DESC` Compliance is 100.0%**.
-   - Check the **Ground-Truth Benchmark** banner showing 100% exact brand/mfg match.
+   - Note the **three-tier attribute panel**: structured 100% / evidence-backed
+     95.4% / 37.1% of values inferred — the honest breakdown, not one flat number.
    - Filter the results table by typing `faucet` or `valve`.
    - Click on any row to open the **3-Way Side-by-Side Diff** (Raw Input vs AI Enriched vs Ground Truth).
 6. Click **"Review Queue"** in the sidebar to inspect flagged low-confidence rows and submit approvals/overrides.
@@ -763,44 +777,138 @@ npm run dev
 
 ## 🧪 12. Verification, Automated Tests & Pitch Scorecard
 
-### 1. Run Automated Test Suite (35 Tests Passing)
+### 1. Run Automated Test Suite (98 Tests Passing)
 
 ```bash
-PYTHONPATH=. ~/.fuma-venv/v1/bin/python -m pytest member3/tests -v
+PYTHONPATH=. python -m pytest member3/tests -q
 ```
 
 ```text
-============================== test session starts ==============================
-collected 35 items
-
-member3/tests/test_delivery.py::test_delivery_column_count PASSED         [  2%]
-member3/tests/test_delivery.py::test_delivery_columns_match_reference PASSED [  5%]
-member3/tests/test_delivery.py::test_delivery_columns_unique PASSED       [  8%]
-member3/tests/test_delivery.py::test_mapper_passthrough_fields PASSED     [ 11%]
-member3/tests/test_delivery.py::test_mapper_all_252_keys_present PASSED   [ 14%]
-member3/tests/test_delivery.py::test_mapper_50_attribute_slots PASSED     [ 17%]
-member3/tests/test_delivery.py::test_mapper_attribute_overflow PASSED     [ 20%]
-member3/tests/test_delivery.py::test_csv_export_utf8_sig PASSED           [ 22%]
-member3/tests/test_delivery.py::test_xlsx_export_structure PASSED         [ 25%]
-member3/tests/test_pipeline.py::test_pipeline_normalizes_row PASSED       [ 54%]
-member3/tests/test_pipeline.py::test_pipeline_isolates_error PASSED       [ 62%]
-member3/tests/test_pipeline.py::test_validation_flags PASSED              [ 71%]
-member3/tests/test_e2e.py::test_health_endpoint PASSED                    [ 80%]
-member3/tests/test_e2e.py::test_demo_sample_flow PASSED                  [ 88%]
-member3/tests/test_e2e.py::test_full_batch_enrichment_and_export PASSED  [100%]
-
-============================== 35 passed in 0.42s ===============================
+........................................................................ [ 73%]
+..........................                                               [100%]
+98 passed in 21.24s
 ```
+
+Coverage spans the 252-column contract, stage isolation, the full API lifecycle,
+security/upload validation, UOM + decimal→fraction conversion, and
+anti-fabrication guards.
 
 ---
 
 ### 2. Run the Pitch Scorecard Benchmark
 
 ```bash
-PYTHONPATH=. ~/.fuma-venv/v1/bin/python -m member3.scripts.run_benchmark
+PYTHONPATH=. python -m member3.scripts.run_benchmark
 ```
 
+Actual output. The report leads with **reference-data provenance** and prints
+"NOT MEASURABLE" wherever a metric genuinely cannot be computed:
+
 ```text
+REFERENCE DATA PROVENANCE
+  Master files present:             0 of 7
+    Manufacturer/Brand master     SEED FALLBACK       29 rows
+    Cross-category LOV            SEED FALLBACK        0 rows
+    Master UOM standards          SEED FALLBACK      117 rows
+  NOTE: vocabularies marked SEED FALLBACK use a curated built-in list,
+        not the supplied master file. Drop the pack into reference_data/
+        to activate full master-data coverage.
+--------------------------------------------------------------
+Rows processed:                     1000
+Elapsed:                            5.24s (191 rows/s)
+--------------------------------------------------------------
+FORMAT COMPLIANCE
+1. Invoice Desc (<=40 chars):       100.0%  [PASS]
+2. Invoice Desc (ALL CAPS):         100.0%  [PASS]
+3. Mobile Desc (schema <=85):       100.0%  [PASS]
+4. Mobile Desc (target 60-80):       98.1%  [PASS]
+5. Pydantic schema validation:      100.0%  [PASS]
+6. Specific classpath:               99.4%  [PASS]
+--------------------------------------------------------------
+ATTRIBUTE COVERAGE (three tiers, deliberately)
+  Structured (>=1 attribute):       100.0%  <- tautological on its own
+  Evidence-backed (>=1 parsed):      95.4%  <- the honest number
+  Values total:                     5381
+    evidence-backed:                3383 (62.9%)
+    inferred from taxonomy:         1998
+--------------------------------------------------------------
+ENTITY RESOLUTION
+  Brand resolved:                   100.0%
+  Brand on STRONG evidence:          85.4%
+--------------------------------------------------------------
+LOV COMPLIANCE (constrained vocabulary)
+  NOT MEASURABLE - no LOV file loaded.
+  Reported as unmeasurable rather than 0%: scoring our own seed
+  vocabulary against itself would prove nothing.
+--------------------------------------------------------------
+DE-DUPLICATION (flag, never delete)
+  Duplicate rows flagged:           3
+  Unique rows:                      997
+--------------------------------------------------------------
+Success rows:                       558
+Needs human review:                 442
+Average confidence:                 91.34
+--------------------------------------------------------------
+Delivery columns:                   252  [PASS]
+Delivery schema valid:              True
+--------------------------------------------------------------
+Ground-truth rows available:        2
+  CAVEAT: n=2 is too small to generalise. The challenge pack supplies
+  200 labelled rows; only these are present in the repo.
+```
+
+> [!IMPORTANT]
+> **Description exact-match against ground truth is 0%, and that is the correct
+> result.** Nine of the ten facts in the expected long description
+> (`Professional Series`, `CleanBoost™`, `120 V`, `47 dBA`…) do not appear
+> anywhere in the input row `PDSH4816AF Dishwasher SS - Display Only`. They live
+> on the manufacturer's product page — the brief's *"enrichment from manufacturer
+> sources"* stage. **Any pipeline scoring high there without retrieval is
+           FuMA ACCURACY BENCHMARK REPORT
+Rows processed:                     1000
+Elapsed:                            0.11s (9124 rows/s)
+----------------------------------------------------------
+1. Invoice Desc (<=40 chars):       100.0%  [PASS]
+2. Invoice Desc (ALL CAPS):         100.0%  [PASS]
+3. Mobile Desc (schema <=85):       100.0%  [PASS]
+4. Mobile Desc (target 60-80):       36.6%  [CHECK]
+5. Pydantic schema validation:      100.0%  [PASS]
+6. Specific classpath (non-generic):  6.2%  [CHECK]
+7. Attribute coverage:               44.0%  [CHECK]
+----------------------------------------------------------
+Success rows:                       420
+Needs human review:                 580
+Processing errors:                  0
+Average confidence:                 76.40
+----------------------------------------------------------
+Delivery columns:                   252  [PASS]
+Delivery rows validated:            1000
+Delivery schema valid:              True
+----------------------------------------------------------
+Ground-truth rows available:        200
+Ground-truth rows matched:          18
+FIELD                              EXACT    NORMALIZED
+MANUFACTURER_NAME                 100.0%        100.0%
+BRAND_NAME                        100.0%        100.0%
+MANUFACTURER_PART_NUMBER          100.0%        100.0%
+Classpath                         100.0%        100.0%
+Product Name                      100.0%        100.0%
+Overall normalized match rate:    100.0%
+----------------------------------------------------------
+Top review reasons:
+    580  Uncertain category / generic classpath fallback
+    560  No technical attributes extracted
+    634  Mobile description outside target window
+```
+
+---
+
+## ❓ 13. Troubleshooting, Edge Cases & FAQs
+> hallucinating.** Full analysis in [`FINDINGS_AND_FIXES.md`](FINDINGS_AND_FIXES.md).
+
+---
+
+## ❓ 13. Troubleshooting, Edge Cases & FAQs
 ==========================================================
            FuMA ACCURACY BENCHMARK REPORT
 ==========================================================
@@ -856,8 +964,26 @@ lsof -ti:8000 | xargs kill -9
 lsof -ti:5173 | xargs kill -9
 ```
 
-### Q3: Why does `INVOICE_DESC` pass 100% while `MOBILE_DESC` target is 36.6%?
-**Answer:** FuMA strictly adheres to honest reporting. `ProductRecord` permits mobile descriptions up to 85 characters (100% pass), while the client target is $60 - 80$ characters. Shorter parts with sparse descriptions produce shorter titles. Rather than hallucinating filler text, FuMA honestly routes these rows to the human review queue.
+### Q3: Why report two separate mobile KPIs?
+**Answer:** `ProductRecord` permits up to 85 characters (100% pass) while the
+client target is $60-80$ (98.1%). Conflating them would let the dashboard claim
+compliance it has not earned, so both are surfaced. Rows outside the window are
+routed to human review rather than padded with filler.
+
+### Q3b: Why is attribute coverage reported three ways?
+**Answer:** Because one number would mislead. The pipeline injects `Product Type`
+and `Application` from the classpath it just assigned, so "100% coverage" is true
+but **tautological** — coverage is 100% *because the code guarantees ≥1 attribute
+exists*. Those defaults are kept (they are useful for faceted search) but reported
+separately: `structured 100% / evidence-backed 95.4% / 37.1% of values inferred`.
+
+### Q3c: Why do 442 of 1,000 rows need review when nothing errored?
+**Answer:** Mostly brand evidence. A brand resolved only by fuzzy match or an
+ambiguous token is capped at confidence 75 — below the 80 threshold — so it cannot
+ship as a clean success. Before this gate, **8.6% of rows shipped at confidence
+100 carrying a plausible-but-wrong ®-marked brand**: a Dewalt charger labelled
+`Diablo®` because its MPN contains `dcb`. A large *honest* review queue is the
+intended behaviour, not a regression.
 
 ### Q4: Why are legal trademark symbols (`®`, `™`) displaying properly in Excel?
 **Answer:** Plain UTF-8 CSVs are opened by Microsoft Excel in legacy ASCII mode, corrupting non-ASCII characters. FuMA writes CSVs using the `utf-8-sig` encoding (which inserts the UTF-8 Byte Order Mark `\xef\xbb\xbf`), forcing Excel to render symbols with 100% fidelity.

@@ -33,6 +33,12 @@ BENCHMARK_FIELDS = {
 }
 
 
+#: Brand tiers strong enough to publish (mirrors fuma_rules.brand_matcher).
+_STRONG_BRAND_TIERS = frozenset(
+    {"EXPLICIT_BRAND_MASTER", "MANUFACTURER_EXACT", "DISTRIBUTOR_OVERRIDE", "MANUFACTURER_ALIAS"}
+)
+
+
 def _pct(count: int, total: int) -> float:
     return round(count / total * 100, 2) if total else 0.0
 
@@ -55,7 +61,21 @@ def compute_metrics(results: List[Dict[str, Any]]) -> Dict[str, Any]:
             "schema_pass_rate": 0.0,
             "classpath_specific_rate": 0.0,
             "attribute_coverage": 0.0,
+            "attribute_structured_rate": 0.0,
+            "attribute_evidence_rate": 0.0,
+            "attribute_values_total": 0,
+            "attribute_evidence_values": 0,
+            "attribute_inferred_values": 0,
+            "attribute_evidence_value_rate": 0.0,
             "avg_attributes": 0.0,
+            "avg_evidence_attributes": 0.0,
+            "brand_resolved_rate": 0.0,
+            "brand_strong_evidence_rate": 0.0,
+            "lov_measurable": False,
+            "lov_compliance_rate": None,
+            "lov_rows_measured": 0,
+            "duplicate_rows": 0,
+            "duplicate_rate": 0.0,
             "confidence_histogram": [],
             "review_reasons": [],
             "status_distribution": [],
@@ -69,6 +89,17 @@ def compute_metrics(results: List[Dict[str, Any]]) -> Dict[str, Any]:
     schema_ok = specific_classpath = with_attributes = 0
     confidence_sum = 0.0
     attribute_sum = 0
+    # Three-tier attribute accounting. "Coverage 100%" is a tautology because the
+    # pipeline guarantees >= 1 attribute per classified row, so evidence-backed
+    # and inferred values are counted separately and reported side by side.
+    evidence_values = inferred_values = 0
+    rows_with_evidence = 0
+    # Brand evidence + LOV compliance, both gated on being measurable at all.
+    strong_brand = resolved_brand = 0
+    lov_sum = 0.0
+    lov_rows = 0
+    duplicates = 0
+
     # Contract buckets: 0-59, 60-79, 80-89, 90-99, 100.
     bucket_ranges = [(0, 59), (60, 79), (80, 89), (90, 99), (100, 100)]
     buckets = [0] * len(bucket_ranges)
@@ -97,6 +128,34 @@ def compute_metrics(results: List[Dict[str, Any]]) -> Dict[str, Any]:
         attribute_sum += attribute_count
         if attribute_count > 0:
             with_attributes += 1
+
+        # Split attribute values by provenance so the dashboard can show
+        # "structured / evidence-backed / inferred" instead of one flat number.
+        row_evidence = 0
+        for attribute in enriched.get("attributes") or []:
+            if str(attribute.get("evidence", "evidence")) == "inferred":
+                inferred_values += 1
+            else:
+                evidence_values += 1
+                row_evidence += 1
+        if row_evidence:
+            rows_with_evidence += 1
+
+        tier = str(enriched.get("brand_match_tier") or "")
+        brand = str(enriched.get("brand_name") or "")
+        if brand:
+            resolved_brand += 1
+            if tier in _STRONG_BRAND_TIERS:
+                strong_brand += 1
+
+        lov = enriched.get("lov_compliance")
+        if lov is not None:
+            lov_sum += float(lov)
+            lov_rows += 1
+
+        if enriched.get("is_duplicate"):
+            duplicates += 1
+
 
         confidence = float(result.get("confidence") or 0.0)
         confidence_sum += confidence
@@ -132,8 +191,31 @@ def compute_metrics(results: List[Dict[str, Any]]) -> Dict[str, Any]:
         "mobile_target_60_80_pass": _pct(mobile_target, total),
         "schema_pass_rate": _pct(schema_ok, total),
         "classpath_specific_rate": _pct(specific_classpath, total),
+        # ---- attribute honesty: three tiers, not one flat number ----
+        # structured = rows with >= 1 attribute (guaranteed, hence a tautology)
+        # evidence   = rows with >= 1 attribute parsed from the supplier's text
+        # inferred   = share of VALUES derived from our own taxonomy
         "attribute_coverage": _pct(with_attributes, total),
+        "attribute_structured_rate": _pct(with_attributes, total),
+        "attribute_evidence_rate": _pct(rows_with_evidence, total),
+        "attribute_values_total": evidence_values + inferred_values,
+        "attribute_evidence_values": evidence_values,
+        "attribute_inferred_values": inferred_values,
+        "attribute_evidence_value_rate": _pct(
+            evidence_values, evidence_values + inferred_values
+        ),
         "avg_attributes": round(attribute_sum / total, 2),
+        "avg_evidence_attributes": round(evidence_values / total, 2),
+        # ---- brand evidence strength ----
+        "brand_resolved_rate": _pct(resolved_brand, total),
+        "brand_strong_evidence_rate": _pct(strong_brand, total),
+        # ---- LOV compliance: None when no LOV file is loaded, never a fake 0% ----
+        "lov_measurable": lov_rows > 0,
+        "lov_compliance_rate": round(lov_sum / lov_rows * 100, 2) if lov_rows else None,
+        "lov_rows_measured": lov_rows,
+        # ---- de-duplication ----
+        "duplicate_rows": duplicates,
+        "duplicate_rate": _pct(duplicates, total),
         "confidence_histogram": histogram,
         "review_reasons": reasons,
         "status_distribution": [

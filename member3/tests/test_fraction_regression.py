@@ -46,18 +46,51 @@ def test_fraction_and_compound_dimension_preservation():
     assert sz4.value == "1-1/4"
     assert sz4.uom == "in"
 
-    # Case 5: 0.375" and 0.5" Decimals
+    # Case 5: inch decimals must CONVERT to trade fractions.
+    #
+    # EXPECTATION CORRECTED. This previously asserted 0.375 -> "0.375", which
+    # contradicted the problem statement: "Manufacturers publish decimals; trade
+    # buyers search fractions. Convert 0.5 to 1/2 and 50.25 in to 50-1/4 in."
+    # The old assertion was locking in the bug, so it has been changed to match
+    # the specification rather than the previous behaviour.
     r5 = extract_attributes("Precision Pin 0.375\" x 2.5\"", "PIN-375", category="Hardware Pin")
     w5 = next((a for a in r5["attributes"] if a.label == "Width" or "Diameter" in a.label), None)
     assert w5 is not None
-    assert w5.value == "0.375"
+    assert w5.value == "3/8", f"0.375 in must render as the trade fraction 3/8, got {w5.value!r}"
     assert w5.uom == "in"
 
     r6 = extract_attributes("Precision Bushing 0.5\" ID", "BSH-05", category="Bushing")
     sz6 = next((a for a in r6["attributes"] if "Size" in a.label or "Diameter" in a.label), None)
     assert sz6 is not None
-    assert sz6.value == "0.5"
+    assert sz6.value == "1/2", f"0.5 in must render as 1/2 per the brief, got {sz6.value!r}"
     assert sz6.uom == "in"
+
+
+def test_precision_decimals_are_not_forced_into_fractions():
+    """Gauge-precision decimals must stay decimal.
+
+    0.045 in (an abrasive cut-off wheel thickness) has no clean 64th equivalent.
+    Forcing it into a fraction would invent precision the manufacturer never
+    published, so it is preserved as a decimal.
+    """
+    r = extract_attributes('49-94-0013 Milw 5"x.045"x7/8" Metal Cut Off Disc', "49-94-0013",
+                           category="Cut-Off Disc")
+    thickness = next((a for a in r["attributes"] if a.label == "Thickness"), None)
+    assert thickness is not None
+    assert thickness.value in (".045", "0.045"), f"got {thickness.value!r}"
+
+
+def test_uom_is_standardised_to_approved_abbreviation():
+    """Every UOM passes through the approved Master UOM map at the choke point."""
+    r = extract_attributes("Motor 120 volts 15 amps 60W", "M-1", category="Motor")
+    by_label = {a.label: a for a in r["attributes"]}
+    assert by_label["Voltage Rating"].uom == "V", "volts must standardise to V"
+    assert by_label["Amperage Rating"].uom == "A", "amps must standardise to A"
+    assert by_label["Wattage Rating"].uom == "W"
+    # Value and UOM stay in separate columns so the delivery file can render
+    # "120 V" with the mandatory space, never "120V".
+    assert by_label["Voltage Rating"].value == "120"
+
 
 
 def test_no_heavy_duty_or_fabricated_filler():

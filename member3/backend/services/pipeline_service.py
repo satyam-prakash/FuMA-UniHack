@@ -50,7 +50,12 @@ REVIEW_CATEGORIES = (
     "export_issue",
     "processing_error",
     "missing_required_field",
+    "weak_brand_evidence",
+    "unresolved_brand",
+    "duplicate_row",
+    "lov_violation",
 )
+
 
 INVOICE_MAX = 40
 MOBILE_SCHEMA_MAX = 85
@@ -128,7 +133,16 @@ def validation_flags(
     }
 
 
+#: Brand tiers strong enough to publish (mirrors fuma_rules.brand_matcher).
+_STRONG_BRAND_TIERS = frozenset(
+    {"EXPLICIT_BRAND_MASTER", "MANUFACTURER_EXACT", "DISTRIBUTOR_OVERRIDE", "MANUFACTURER_ALIAS"}
+)
+
+
 def _categories(enriched: Mapping[str, Any], validation: Mapping[str, Any]) -> List[str]:
+    tier = str(enriched.get("brand_match_tier") or "")
+    brand = str(enriched.get("brand_name") or "")
+    lov = enriched.get("lov_compliance")
     flags = {
         "low_confidence": float(enriched.get("confidence_score") or 0.0) < CONFIDENCE_FLOOR,
         "schema_failure": not validation["schema_valid"],
@@ -136,8 +150,15 @@ def _categories(enriched: Mapping[str, Any], validation: Mapping[str, Any]) -> L
         "generic_taxonomy": validation["generic_classpath"],
         "description_issue": not validation["invoice_pass"] or not validation["mobile_target_pass"],
         "export_issue": bool(validation["export_warnings"]),
+        # A brand is only publishable on strong evidence. These two categories
+        # let a reviewer filter straight to "brands we guessed".
+        "unresolved_brand": bool(tier) and not brand,
+        "weak_brand_evidence": bool(tier) and bool(brand) and tier not in _STRONG_BRAND_TIERS,
+        "duplicate_row": bool(enriched.get("is_duplicate")),
+        "lov_violation": lov is not None and float(lov) < 0.8,
     }
     return [name for name, hit in flags.items() if hit]
+
 
 
 def _base_result(raw: Dict[str, str], row_id: int) -> Dict[str, Any]:

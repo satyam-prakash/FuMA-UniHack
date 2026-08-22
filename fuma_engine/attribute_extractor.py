@@ -19,7 +19,15 @@ Extracts technical attributes, units of measure, and features across all industr
 
 import re
 from typing import Dict, List, Any, Optional
+
 from fuma_engine.schema import AttributeItem
+
+# Member 1 owns UOM/fraction standards (backed by Unilog_Master_UOM_Standards and
+# Decimal_Fraction). Member 2 imports them rather than re-deriving units inline --
+# two competing UOM implementations was exactly the bug that let "0.5 in" ship
+# instead of "1/2 in".
+from fuma_rules.uom_standardizer import decimal_to_trade_fraction, standardize_uom
+
 
 # ---------------------------------------------------------------------------
 # Number grammar: complete fractions (1/2, 3/8, 5/16, 1-1/4), decimals
@@ -154,36 +162,16 @@ DECKING_COLORS = {
 
 
 def convert_decimal_to_fraction(val_str: str) -> str:
-    """Converts common inch decimals to standard fractional notation."""
-    try:
-        f = float(val_str)
-        whole = int(f)
-        frac = f - whole
-        frac_map = {
-            0.5: "1/2",
-            0.25: "1/4",
-            0.75: "3/4",
-            0.125: "1/8",
-            0.375: "3/8",
-            0.625: "5/8",
-            0.875: "7/8",
-            0.0625: "1/16",
-            0.1875: "3/16",
-            0.3125: "5/16",
-            0.4375: "7/16",
-            0.5625: "9/16",
-            0.6875: "11/16",
-            0.8125: "13/16",
-            0.9375: "15/16"
-        }
-        for dec_val, frac_str in frac_map.items():
-            if abs(frac - dec_val) < 0.001:
-                if whole > 0:
-                    return f"{whole}-{frac_str}"
-                return frac_str
-    except Exception:
-        pass
-    return val_str
+    """Deprecated shim -> :func:`fuma_rules.uom_standardizer.decimal_to_trade_fraction`.
+
+    This function previously held a duplicate 15-entry fraction table and was
+    never actually called (its only occurrence in the file was its own ``def``).
+    It now delegates to Member 1's full 63-entry table sourced from
+    ``Decimal_Fraction.xlsx``, so there is exactly one conversion implementation.
+    Retained only for backwards compatibility with existing callers/tests.
+    """
+    return decimal_to_trade_fraction(val_str)
+
 
 
 def _norm_num(value: str) -> str:
@@ -219,13 +207,38 @@ def _has_label(attrs: List[AttributeItem], *labels: str) -> bool:
     return any(a.label.lower() in want for a in attrs)
 
 
+#: UOMs whose values are dimensional and therefore expressed as trade fractions.
+#: Ratings (V, A, W, dBA, gpm) stay decimal -- "120 V" not "120-0/1 V".
+_FRACTIONAL_UOMS = frozenset({"in", "ft", "yd"})
+
+
 def _add(attrs: List[AttributeItem], label: str, value: str, uom: str = "") -> None:
-    """Appends an attribute with strictly separated Value / UOM columns."""
+    """Appends an attribute with strictly separated Value / UOM columns.
+
+    THE SINGLE NORMALISATION CHOKE POINT. Every attribute in the pipeline is
+    created here, so applying the Unilog standards at this one site guarantees
+    they are applied everywhere:
+
+      1. UOM -> approved abbreviation ("inches"/"IN."/'"' -> "in", "volts" -> "V")
+      2. Dimensional decimals -> trade fractions (0.5 -> 1/2, 50.25 -> 50-1/4)
+      3. Value and UOM stay in separate columns, so the delivery file can render
+         "24 in" with the mandatory space and never "24in"
+    """
     value = str(value or "").strip()
     uom = str(uom or "").strip()
     if not value:
         return
+
+    # 1. Approved UOM abbreviation.
+    if uom:
+        uom = standardize_uom(uom)
+
+    # 2. Trade fractions for dimensional values only.
+    if uom in _FRACTIONAL_UOMS and re.fullmatch(r"\d*\.\d+|\d+", value):
+        value = decimal_to_trade_fraction(value)
+
     attrs.append(AttributeItem(label=label, value=value, uom=uom))
+
 
 
 def _is_abrasive(category: str, text_lower: str) -> bool:
