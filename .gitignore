@@ -1,7 +1,7 @@
 # Local test scripts & scratch runners
 test_member2_local.py
 test_*.py
-
+verify_*.py
 # Problem Statement & Datasets
 Probelm_statement/
 stage1_normalized_output.csv
@@ -69,6 +69,8 @@ desktop.ini
 # Member 3 frontend build artifacts
 member3/frontend/node_modules/
 member3/frontend/dist/
+*.timestamp-*.mjs
+enriched_output_*
 
 # Member 3 tests are real deliverables, not scratch runners
 !member3/tests/

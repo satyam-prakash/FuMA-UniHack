@@ -1,12 +1,15 @@
 """
 Confidence & Quality Scorer
 Owned by Member 2.
-Evaluates character limit compliance, attribute completeness, and sets review flags.
+Evaluates character limit compliance, attribute completeness, sparse descriptions, and sets review flags.
 """
 
+import re
 from typing import Dict, List, Any, Tuple
 
-def evaluate_record(descs: Dict[str, str], extracted: Dict[str, Any], classpath: str) -> Tuple[float, bool, List[str]]:
+PRODUCT_NOUNS = r'\b(dishwasher|refrigerator|fridge|freezer|microwave|washer|dryer|faucet|valve|fitting|coupling|elbow|tee|nipple|bushing|disc|wheel|belt|blade|bit|drill|driver|saw|sander|grinder|lamp|bulb|light|fixture|chandelier|pendant|sconce|outlet|switch|dimmer|panel|board|decking|fascia|railing|post|skylight|door|window|sheathing|siding|mortar|tape|screw|bolt|nut|anchor|latch|hanger|glove|glasses|mask|gauge|meter|apparel|hoodie|jacket|bottle|chest|box)\b'
+
+def evaluate_record(descs: Dict[str, str], extracted: Dict[str, Any], classpath: str, raw_brand: str = "", raw_desc: str = "") -> Tuple[float, bool, List[str]]:
     """
     Evaluates quality and generates (confidence_score, needs_review, review_reasons).
     
@@ -27,7 +30,7 @@ def evaluate_record(descs: Dict[str, str], extracted: Dict[str, Any], classpath:
         
     # 2. Check MOBILE_DESC limit (60-80 chars target)
     mobile = descs.get("mobile_desc", "")
-    if len(mobile) < 40 or len(mobile) > 85:
+    if len(mobile) < 60 or len(mobile) > 80:
         score -= 10.0
         reasons.append(f"MOBILE_DESC length ({len(mobile)} chars) outside optimal 60-80 window")
         
@@ -41,6 +44,12 @@ def evaluate_record(descs: Dict[str, str], extracted: Dict[str, Any], classpath:
     if not classpath or "General Hardware" in classpath:
         score -= 15.0
         reasons.append("Uncertain category / generic classpath fallback")
+        
+    # 5. Check Sparse / Low-Context Descriptions missing product noun
+    desc_str = raw_desc.strip().lower() if raw_desc else ""
+    if desc_str and len(desc_str) < 30 and not re.search(PRODUCT_NOUNS, desc_str):
+        score -= 25.0
+        reasons.append("Low-context description missing explicit product noun; manual verification recommended")
         
     score = max(0.0, min(100.0, score))
     needs_review = score < 80.0

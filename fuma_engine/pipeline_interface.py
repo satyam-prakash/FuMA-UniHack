@@ -25,13 +25,14 @@ def enrich_single_item(raw_dict: Dict[str, Any]) -> Dict[str, Any]:
     mpn = str(raw_dict.get("Mfg_Part_Num") or raw_dict.get("mfg_part_num") or "").strip()
     raw_desc = str(raw_dict.get("Part_Desc") or raw_dict.get("part_desc") or raw_dict.get("part_desc_raw") or "").strip()
     mfg = str(raw_dict.get("MANUFACTURER_NAME") or raw_dict.get("Part_Manuf") or raw_dict.get("manufacturer_name") or "").strip()
-    brand = str(raw_dict.get("BRAND_NAME") or raw_dict.get("E1_Brand") or raw_dict.get("brand_name") or "").strip()
+    raw_brand_val = str(raw_dict.get("E1_Brand") or raw_dict.get("raw_brand") or "").strip()
+    brand = str(raw_dict.get("BRAND_NAME") or raw_dict.get("brand_name") or raw_brand_val).strip()
     
     # 1. Step: Taxonomy Classification
-    classpath, unspsc, product_name = classify_taxonomy(raw_desc, mpn)
+    classpath, unspsc, product_name = classify_taxonomy(raw_desc, mpn, mfg)
     
     # 2. Step: Attribute Extraction
-    extracted = extract_attributes(raw_desc, mpn, category=product_name)
+    extracted = extract_attributes(raw_desc, mpn, category=product_name, manufacturer_name=mfg)
     
     # Clean item dict for descriptions
     item_ctx = {
@@ -48,7 +49,7 @@ def enrich_single_item(raw_dict: Dict[str, Any]) -> Dict[str, Any]:
     descs = build_all_descriptions(item_ctx, extracted)
     
     # 4. Step: Quality & Confidence Scoring
-    score, needs_review, reasons = evaluate_record(descs, extracted, classpath)
+    score, needs_review, reasons = evaluate_record(descs, extracted, classpath, raw_brand=raw_brand_val, raw_desc=raw_desc)
     
     # 5. Build Final Standard Record
     record = ProductRecord(
