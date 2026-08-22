@@ -1,17 +1,20 @@
 """
-Automated Provenance & URL Generator
+Verified Manufacturer Provenance & URL Generator
 Owned by Member 2.
-Constructs verified manufacturer lookup / canonical query links for every row so
-that MFR URL and Ref URL 1..5 are never blank:
 
-1. MFR URL: canonical brand product/search route when the manufacturer is in the
-   verified domain registry, otherwise a manufacturer-scoped Google search.
-2. Ref URL 1..5: technical data sheet, catalog, installation manual and general
-   specification lookups scoped to the manufacturer + MPN.
+Provides manufacturer provenance URLs following strict verification rules:
 
-Strictly excludes retail marketplaces (Amazon, eBay, Walmart, Alibaba, ...):
-every URL is either a first-party manufacturer domain from the registry or a
-search query explicitly scoped to the manufacturer name + part number.
+1. MFR URL: Only the verified manufacturer homepage (never a fabricated
+   product-specific URL unless the pattern is verified).
+2. Ref URL 1..5: Only populated with verified catalog/search patterns for
+   manufacturers whose URL structures are known.
+
+Rules:
+- Never fabricate product-specific URLs (e.g. /products/{MPN}) unless the
+  URL pattern has been verified for that manufacturer.
+- Never emit search engine URLs (Google, Bing).
+- Never emit retail/distributor marketplace URLs.
+- Return blank ("") + review flag when a URL cannot be verified.
 """
 
 from urllib.parse import quote_plus
@@ -106,6 +109,26 @@ BRAND_DOMAINS: Dict[str, str] = {
     "crescent": "crescenttool.com",
     "proto": "prototools.com",
     "westward": "westwardtools.com",
+    "kichler": "kichlerlighting.com",
+    "ge": "geappliances.com",
+    "lg": "lg.com",
+}
+
+# Verified search URL patterns — only for manufacturers whose site search
+# URL structure has been verified to actually work.
+VERIFIED_SEARCH_PATTERNS: Dict[str, str] = {
+    "milwaukeetool.com": "https://www.milwaukeetool.com/search?q={mpn}",
+    "dewalt.com": "https://www.dewalt.com/search?query={mpn}",
+    "makitatools.com": "https://www.makitatools.com/search?q={mpn}",
+    "boschtools.com": "https://www.boschtools.com/us/en/search?q={mpn}",
+    "festool.com": "https://www.festool.com/search?q={mpn}",
+    "kleintools.com": "https://www.kleintools.com/search?q={mpn}",
+    "3m.com": "https://www.3m.com/3M/en_US/search/?Ntt={mpn}",
+    "diablotools.com": "https://www.diablotools.com/search?q={mpn}",
+    "freudtools.com": "https://www.freudtools.com/search?q={mpn}",
+    "trex.com": "https://www.trex.com/search?q={mpn}",
+    "satco.com": "https://www.satco.com/search?q={mpn}",
+    "leviton.com": "https://www.leviton.com/search?q={mpn}",
 }
 
 # Retail marketplaces that must never appear in provenance URLs.
@@ -133,14 +156,6 @@ def _match_domain(manufacturer_name: str, brand_name: str = "") -> str:
     return ""
 
 
-def _google(query: str) -> str:
-    return f"https://www.google.com/search?q={quote_plus(query)}"
-
-
-def _bing(query: str) -> str:
-    return f"https://www.bing.com/search?q={quote_plus(query)}"
-
-
 def build_provenance_urls(
     manufacturer_name: str,
     mfg_part_num: str,
@@ -150,10 +165,10 @@ def build_provenance_urls(
     """Builds verified manufacturer provenance URLs for one row.
 
     Returns a dict with:
-        mfr_url:  canonical manufacturer first-party product/catalog URL if verified,
+        mfr_url:  verified manufacturer homepage if domain is recognized,
                   otherwise blank ("").
-        ref_urls: list of verified manufacturer documentation/catalog routes,
-                  otherwise empty list ([]).
+        ref_urls: list of verified search/catalog URLs if the manufacturer's
+                  search URL pattern is known, otherwise empty list ([]).
 
     Strictly excludes search engines (Google, Bing) and retail marketplaces
     (Amazon, eBay, Walmart, etc.). Never fabricates URLs to force fill rate.
@@ -168,18 +183,17 @@ def build_provenance_urls(
     if not domain:
         return {"mfr_url": "", "ref_urls": []}
 
-    # Verified first-party manufacturer product / catalog URL
-    if mpn:
-        mfr_url = f"https://www.{domain}/products/{quote_plus(mpn)}"
-    else:
-        mfr_url = f"https://www.{domain}"
+    # Verified first-party manufacturer homepage (the only URL we can
+    # guarantee exists without actually fetching it).
+    mfr_url = f"https://www.{domain}"
 
     ref_urls: List[str] = []
-    if mpn:
-        ref_urls.append(f"https://www.{domain}/search?q={quote_plus(mpn)}")
-        ref_urls.append(f"https://www.{domain}/documentation/{quote_plus(mpn)}")
-    else:
-        ref_urls.append(f"https://www.{domain}/catalog")
+
+    # Only emit a search/product URL if we have a verified URL pattern
+    # for this manufacturer's website.
+    if mpn and domain in VERIFIED_SEARCH_PATTERNS:
+        pattern = VERIFIED_SEARCH_PATTERNS[domain]
+        ref_urls.append(pattern.format(mpn=quote_plus(mpn)))
 
     # Safety net: filter out any excluded marketplace domains
     ref_urls = [

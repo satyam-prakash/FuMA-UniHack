@@ -39,13 +39,22 @@ MATERIAL_MAP = {
     "brass": "Brass",
     "bronze": "Bronze",
     "steel": "Steel",
+    "carbon steel": "Carbon Steel",
+    "galv steel": "Galvanized Steel",
+    "galvanized steel": "Galvanized Steel",
     "pvc": "PVC",
     "cpvc": "CPVC",
+    "abs": "ABS",
+    "hdpe": "HDPE",
     "ci": "Cast Iron",
     "cast iron": "Cast Iron",
     "copper": "Copper",
     "alum": "Aluminum",
     "aluminum": "Aluminum",
+    "aluminium": "Aluminum",
+    "nylon": "Nylon",
+    "rubber": "Rubber",
+    "fiberglass": "Fiberglass",
     "vinyl": "Vinyl",
     "osb": "OSB",
     "composite": "Composite",
@@ -54,7 +63,11 @@ MATERIAL_MAP = {
     "cedar": "Cedar",
     "doug fir": "Douglas Fir",
     "fir": "Douglas Fir",
-    "mortar": "Mortar"
+    "mortar": "Mortar",
+    "porcelain": "Porcelain",
+    "ceramic": "Ceramic",
+    "polyester": "Polyester",
+    "polycarbonate": "Polycarbonate",
 }
 
 # Color / Finish mapping
@@ -84,7 +97,22 @@ FINISH_MAP = {
     "dark chocolate": "Dark Chocolate",
     "light buff": "Light Buff",
     "juniper": "Juniper",
-    "gray": "Gray"
+    "gray": "Gray",
+    "satin": "Satin",
+    "matte": "Matte",
+    "polished": "Polished",
+    "oil rubbed bronze": "Oil Rubbed Bronze",
+    "orb": "Oil Rubbed Bronze",
+    "antique brass": "Antique Brass",
+    "natural": "Natural",
+    "clear": "Clear",
+    "galvanized": "Galvanized",
+    "zinc plated": "Zinc Plated",
+    "powder coated": "Powder Coated",
+    "anodized": "Anodized",
+    "raw": "Raw / Unfinished",
+    "unfinished": "Raw / Unfinished",
+    "painted": "Painted",
 }
 
 # Fitting / valve nouns that qualify a leading fraction as a pipe size.
@@ -159,8 +187,16 @@ def convert_decimal_to_fraction(val_str: str) -> str:
 
 
 def _norm_num(value: str) -> str:
-    """Normalizes a parsed number/fraction token: strips spaces, keeps 1-1/4."""
-    return re.sub(r"\s+", "", value)
+    """Normalizes a parsed number/fraction token: strips spaces, keeps 1-1/4.
+
+    Handles edge cases:
+      '1 - 1/4'  → '1-1/4'
+      ' 3/8 '    → '3/8'
+      '0.375'    → '0.375'
+      '5 / 16'   → '5/16'
+    """
+    v = re.sub(r"\s+", "", value)  # collapse all whitespace
+    return v.strip()
 
 
 def _peek_uom(text: str, pos: int, default: str = "in") -> str:
@@ -652,6 +688,17 @@ def extract_attributes(raw_desc: str, mfg_part_num: str = "", category: str = ""
     if qty:
         package_qty = qty.group(1)
         _add(extracted_attrs, "Package Quantity", package_qty)
+    else:
+        # Parenthesized quantities: (100), qty 25, box/100, bx100, /1000
+        qty2 = re.search(r'(?:qty\s*|bx|box/|/)\s*(\d+)\b|\((\d{2,})\)\s*(?:ct|count)?', text, re.IGNORECASE)
+        if qty2:
+            package_qty = qty2.group(1) or qty2.group(2)
+            _add(extracted_attrs, "Package Quantity", package_qty)
+        else:
+            ct_match = re.search(r'(\d+)\s*ct\b', text, re.IGNORECASE)
+            if ct_match:
+                package_qty = ct_match.group(1)
+                _add(extracted_attrs, "Package Quantity", package_qty)
 
     # 12. Material Construction
     for token, canonical in MATERIAL_MAP.items():

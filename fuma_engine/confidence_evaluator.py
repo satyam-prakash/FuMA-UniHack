@@ -2,12 +2,14 @@
 Confidence & Quality Scorer
 Owned by Member 2.
 Evaluates character limit compliance, attribute completeness, sparse descriptions, and sets review flags.
+Blank-but-honest provenance (no verified manufacturer domain) is NOT penalized —
+fabricating URLs to force fill rate is worse than leaving them blank.
 """
 
 import re
 from typing import Dict, List, Any, Tuple
 
-PRODUCT_NOUNS = r'\b(dishwasher|refrigerator|fridge|freezer|microwave|washer|dryer|faucet|valve|fitting|coupling|elbow|tee|nipple|bushing|disc|wheel|belt|blade|bit|drill|driver|saw|sander|grinder|lamp|bulb|light|fixture|chandelier|pendant|sconce|outlet|switch|dimmer|panel|board|decking|fascia|railing|post|skylight|door|window|sheathing|siding|mortar|tape|screw|bolt|nut|anchor|latch|hanger|glove|glasses|mask|gauge|meter|apparel|hoodie|jacket|bottle|chest|box)\b'
+PRODUCT_NOUNS = r'\b(dishwasher|refrigerator|fridge|freezer|microwave|washer|dryer|faucet|valve|fitting|coupling|elbow|tee|nipple|bushing|disc|wheel|belt|blade|bit|drill|driver|saw|sander|grinder|lamp|bulb|light|fixture|chandelier|pendant|sconce|outlet|switch|dimmer|panel|board|decking|fascia|railing|post|skylight|door|window|sheathing|siding|mortar|tape|screw|bolt|nut|anchor|latch|hanger|glove|glasses|mask|gauge|meter|apparel|hoodie|jacket|bottle|chest|box|nailer|stapler|planer|router|trimmer|blower|extractor|ratchet|wrench|cutter|knife|snip|fan|coffee|espresso|oven|cooktop|range|heater|thermostat|alarm|speaker)\b'
 
 def evaluate_record(descs: Dict[str, str], extracted: Dict[str, Any], classpath: str, raw_brand: str = "", raw_desc: str = "") -> Tuple[float, bool, List[str]]:
     """
@@ -46,9 +48,13 @@ def evaluate_record(descs: Dict[str, str], extracted: Dict[str, Any], classpath:
         reasons.append("Uncertain category / generic classpath fallback")
         
     # 5. Check Sparse / Low-Context Descriptions missing product noun
+    # Descriptions under 30 chars with no recognisable product noun get a
+    # mild review flag.  The penalty is kept low (10 pts) so it does not
+    # trigger review on its own — it only bites when combined with another
+    # issue, keeping the review queue honest.
     desc_str = raw_desc.strip().lower() if raw_desc else ""
     if desc_str and len(desc_str) < 30 and not re.search(PRODUCT_NOUNS, desc_str):
-        score -= 25.0
+        score -= 10.0
         reasons.append("Low-context description missing explicit product noun; manual verification recommended")
         
     score = max(0.0, min(100.0, score))

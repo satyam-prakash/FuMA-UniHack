@@ -42,6 +42,47 @@ ABBREVIATIONS = {
     "DOWNLIGHT": "DOWN LT"
 }
 
+# ---------------------------------------------------------------------------
+# Anti-fabrication safety net.  These superlatives / filler phrases must NEVER
+# be injected by any description builder function unless the source data
+# actually contains the claim.  The guard is applied as a final pass on
+# every generated text field.
+# ---------------------------------------------------------------------------
+BANNED_FILLERS = {
+    "Heavy Duty",
+    "Premium",
+    "High Performance",
+    "Superior",
+    "Universal",
+    "Durable",
+    "Professional Grade",
+    "Industrial Strength",
+    "Top Quality",
+    "Best In Class",
+}
+
+
+def _strip_fillers(text: str) -> str:
+    """Removes banned filler phrases from generated text.
+
+    Case-insensitive removal so that 'heavy duty', 'HEAVY DUTY' and
+    'Heavy Duty' are all caught.  Collapses resulting double-spaces.
+    """
+    import re
+    result = text
+    for filler in BANNED_FILLERS:
+        result = re.sub(
+            r",?\s*" + re.escape(filler) + r"\s*,?",
+            " ",
+            result,
+            flags=re.IGNORECASE,
+        )
+    # Collapse whitespace artifacts left by removal.
+    result = re.sub(r"\s{2,}", " ", result).strip()
+    result = re.sub(r"\s+([,.])", r"\1", result)  # fix orphaned punctuation
+    return result
+
+
 def abbreviate_text(text: str) -> str:
     """Replaces words with standard invoice abbreviations."""
     words = text.split()
@@ -150,7 +191,10 @@ def build_mobile_desc(mfg: str, brand: str, mpn: str, product_name: str, attrs: 
     # Final safety clamp
     if len(mobile) > 80:
         mobile = mobile[:80].rstrip(", ")
-        
+
+    # Anti-fabrication: strip any banned filler that may have leaked in
+    mobile = _strip_fillers(mobile)
+
     return mobile
 
 def build_short_desc(mfg: str, brand: str, mpn: str, product_name: str, attrs: Dict[str, Any]) -> str:
@@ -209,7 +253,8 @@ def build_retail_desc(mfg: str, brand: str, mpn: str, product_name: str, attrs: 
         desc += " featuring " + ", ".join(specs[:4]) + "."
     else:
         desc += "."
-    return desc
+    # Anti-fabrication: strip any banned filler that may have leaked in
+    return _strip_fillers(desc)
 
 def _spec_phrase(attrs: Dict[str, Any], skip_labels: tuple = ()) -> str:
     """Returns a compact 'Label: Value uom' phrase from the first usable attribute."""
@@ -263,7 +308,8 @@ def build_marketing_description(
     else:
         marketing = s1
 
-    return " ".join(marketing.split())
+    # Anti-fabrication: strip any banned filler that may have leaked in
+    return _strip_fillers(" ".join(marketing.split()))
 
 
 def synthesize_features(
@@ -386,8 +432,9 @@ def synthesize_features(
     # De-duplicate while preserving order; cap at available verified features
     deduped: List[str] = []
     for f in features:
-        if f not in deduped:
-            deduped.append(f)
+        cleaned = _strip_fillers(f)
+        if cleaned and cleaned not in deduped:
+            deduped.append(cleaned)
     return deduped
 
 
