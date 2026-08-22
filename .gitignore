@@ -2,6 +2,8 @@
 test_member2_local.py
 test_*.py
 verify_*.py
+run_*.py
+run_metrics.py
 # Problem Statement & Datasets
 Probelm_statement/
 stage1_normalized_output.csv
