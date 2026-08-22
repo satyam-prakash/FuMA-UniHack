@@ -71,6 +71,7 @@ member3/frontend/node_modules/
 member3/frontend/dist/
 *.timestamp-*.mjs
 enriched_output_*
+output/
 
 # Member 3 tests are real deliverables, not scratch runners
 !member3/tests/

@@ -8,9 +8,13 @@ from typing import Dict, List, Any
 import pandas as pd
 from fuma_engine.taxonomy_classifier import classify_taxonomy
 from fuma_engine.attribute_extractor import extract_attributes
-from fuma_engine.description_builder import build_all_descriptions
+from fuma_engine.description_builder import build_all_descriptions, synthesize_features
 from fuma_engine.confidence_evaluator import evaluate_record
+from fuma_engine.sourcing_engine import build_provenance_urls
 from fuma_engine.schema import ProductRecord
+
+#: Hard cap matching Member 3's ITEM_FEATURES_1..20 delivery slots.
+MAX_FEATURES = 20
 
 def enrich_single_item(raw_dict: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -32,14 +36,31 @@ def enrich_single_item(raw_dict: Dict[str, Any]) -> Dict[str, Any]:
     classpath, unspsc, product_name = classify_taxonomy(raw_desc, mpn, mfg)
     
     # 2. Step: Attribute Extraction
-    extracted = extract_attributes(raw_desc, mpn, category=product_name, manufacturer_name=mfg)
+    extracted = extract_attributes(
+        raw_desc, mpn, category=product_name, manufacturer_name=mfg, classpath=classpath
+    )
+    
+    # 2b. Step: Grounded feature synthesis (fills ITEM_FEATURES_1..5+ when
+    # external marketing copy is sparse). Detected features come first,
+    # synthesized grounded bullets fill up to the delivery slot cap.
+    brand_for_ctx = brand if brand and not brand.startswith("--") else mfg
+    synthesized = synthesize_features(
+        mfg, brand_for_ctx, mpn, product_name, extracted, classpath
+    )
+    merged_features: List[str] = list(extracted.get("features") or [])
+    for feat in synthesized:
+        if len(merged_features) >= MAX_FEATURES:
+            break
+        if feat not in merged_features:
+            merged_features.append(feat)
+    extracted["features"] = merged_features
     
     # Clean item dict for descriptions
     item_ctx = {
         "mfg_part_num": mpn,
         "part_desc_raw": raw_desc,
         "manufacturer_name": mfg,
-        "brand_name": brand if brand and not brand.startswith("--") else mfg,
+        "brand_name": brand_for_ctx,
         "product_name": product_name,
         "classpath": classpath,
         "unspsc": unspsc
@@ -51,7 +72,10 @@ def enrich_single_item(raw_dict: Dict[str, Any]) -> Dict[str, Any]:
     # 4. Step: Quality & Confidence Scoring
     score, needs_review, reasons = evaluate_record(descs, extracted, classpath, raw_brand=raw_brand_val, raw_desc=raw_desc)
     
-    # 5. Build Final Standard Record
+    # 5. Step: Manufacturer Provenance & Reference URLs (never blank)
+    urls = build_provenance_urls(mfg, mpn, brand_name=item_ctx["brand_name"], product_name=product_name)
+    
+    # 6. Build Final Standard Record
     record = ProductRecord(
         mfg_part_num=mpn,
         part_desc_raw=raw_desc,
@@ -68,6 +92,9 @@ def enrich_single_item(raw_dict: Dict[str, Any]) -> Dict[str, Any]:
         short_desc=descs["short_desc"],
         long_desc1=descs["long_desc1"],
         retail_desc=descs["retail_desc"],
+        marketing_description=descs.get("marketing_description", ""),
+        mfr_url=str(urls["mfr_url"]),
+        ref_urls=[str(u) for u in urls["ref_urls"]],
         confidence_score=score,
         needs_review=needs_review,
         review_reasons=reasons

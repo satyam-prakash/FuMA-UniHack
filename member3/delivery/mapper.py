@@ -39,9 +39,14 @@ ENRICHED_COLUMNS = {
     "SHORT_DESC": "short_desc",
     "LONG_DESC1": "long_desc1",
     "RETAIL_DESC": "retail_desc",
+    "MARKETING_DESCRIPTION": "marketing_description",
+    "MFR URL": "mfr_url",
     "Product Name": "product_name",
     "UNSPSC": "unspsc",
 }
+
+#: Ref URL slots the delivery format provides (Ref URL 1..5).
+REF_URL_SLOTS = 5
 
 
 def _s(value: Any) -> str:
@@ -74,6 +79,10 @@ def map_record_to_delivery(
 
     for column, field in ENRICHED_COLUMNS.items():
         row[column] = _s(enriched.get(field))
+
+    ref_urls = list(enriched.get("ref_urls") or [])
+    for slot, url in enumerate(ref_urls[:REF_URL_SLOTS], start=1):
+        row[f"Ref URL {slot}"] = _s(url)
 
     features = list(enriched.get("features") or [])
     if len(features) > FEATURE_SLOTS:

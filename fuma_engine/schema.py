@@ -30,6 +30,13 @@ class ProductRecord(BaseModel):
     long_desc1: str = Field(..., description="Complete spec chain description")
     retail_desc: str = Field(..., description="Retail / Marketing summary")
     
+    # Member 2: Grounded B2B marketing copy (2-sentence professional summary)
+    marketing_description: str = ""
+    
+    # Member 2: Manufacturer provenance & reference URLs (never blank)
+    mfr_url: str = ""
+    ref_urls: List[str] = []
+    
     # Member 2: Quality & Confidence Scoring
     confidence_score: float = 100.0
     needs_review: bool = False
