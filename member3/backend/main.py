@@ -95,11 +95,11 @@ if FRONTEND_DIST.is_dir():
             content={"error": {"code": "NOT_FOUND", "message": message, "row_id": None, "details": []}},
         )
 
-    @app.get("/", include_in_schema=False)
+    @app.api_route("/", methods=["GET", "HEAD"], include_in_schema=False)
     def spa_index() -> FileResponse:
         return FileResponse(FRONTEND_DIST / "index.html")
 
-    @app.get("/{path:path}", include_in_schema=False)
+    @app.api_route("/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)
     def spa_fallback(path: str):
         # The API router is registered before this catch-all, so any path that
         # reaches here under /api is an UNKNOWN endpoint. Answer with the JSON

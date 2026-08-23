@@ -137,7 +137,7 @@ def _delivery_rows(job: Dict[str, Any]) -> tuple[List[Dict[str, str]], List[str]
 # --------------------------------------------------------------------- health
 
 
-@router.get("/health")
+@router.api_route("/health", methods=["GET", "HEAD"])
 def health() -> Dict[str, Any]:
     return {"status": "ok", "service": "fuma-api", "delivery_columns": DELIVERY_COLUMN_COUNT}
 
