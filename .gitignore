@@ -2,6 +2,7 @@
 test_member2_local.py
 test_*.py
 verify_*.py
+fix_*.py
 run_*.py
 run_metrics.py
 # Problem Statement & Datasets

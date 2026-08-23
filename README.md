@@ -790,7 +790,7 @@ PYTHONPATH=. python -m pytest member3/tests -q
 ```
 
 Coverage spans the 252-column contract, stage isolation, the full API lifecycle,
-security/upload validation, UOM + decimal→fraction conversion, and
+security/upload validation, UOM + decimal-to-fraction conversion, and
 anti-fabrication guards.
 
 ---
@@ -847,6 +847,7 @@ DE-DUPLICATION (flag, never delete)
 --------------------------------------------------------------
 Success rows:                       558
 Needs human review:                 442
+Processing errors:                  0
 Average confidence:                 91.34
 --------------------------------------------------------------
 Delivery columns:                   252  [PASS]
@@ -855,107 +856,26 @@ Delivery schema valid:              True
 Ground-truth rows available:        2
   CAVEAT: n=2 is too small to generalise. The challenge pack supplies
   200 labelled rows; only these are present in the repo.
+==============================================================
 ```
 
 > [!IMPORTANT]
 > **Description exact-match against ground truth is 0%, and that is the correct
 > result.** Nine of the ten facts in the expected long description
-> (`Professional Series`, `CleanBoost™`, `120 V`, `47 dBA`…) do not appear
+> (`Professional Series`, `CleanBoost(TM)`, `120 V`, `47 dBA` ...) do not appear
 > anywhere in the input row `PDSH4816AF Dishwasher SS - Display Only`. They live
-> on the manufacturer's product page — the brief's *"enrichment from manufacturer
+> on the manufacturer's product page - the brief's *"enrichment from manufacturer
 > sources"* stage. **Any pipeline scoring high there without retrieval is
-           FuMA ACCURACY BENCHMARK REPORT
-Rows processed:                     1000
-Elapsed:                            0.11s (9124 rows/s)
-----------------------------------------------------------
-1. Invoice Desc (<=40 chars):       100.0%  [PASS]
-2. Invoice Desc (ALL CAPS):         100.0%  [PASS]
-3. Mobile Desc (schema <=85):       100.0%  [PASS]
-4. Mobile Desc (target 60-80):       36.6%  [CHECK]
-5. Pydantic schema validation:      100.0%  [PASS]
-6. Specific classpath (non-generic):  6.2%  [CHECK]
-7. Attribute coverage:               44.0%  [CHECK]
-----------------------------------------------------------
-Success rows:                       420
-Needs human review:                 580
-Processing errors:                  0
-Average confidence:                 76.40
-----------------------------------------------------------
-Delivery columns:                   252  [PASS]
-Delivery rows validated:            1000
-Delivery schema valid:              True
-----------------------------------------------------------
-Ground-truth rows available:        200
-Ground-truth rows matched:          18
-FIELD                              EXACT    NORMALIZED
-MANUFACTURER_NAME                 100.0%        100.0%
-BRAND_NAME                        100.0%        100.0%
-MANUFACTURER_PART_NUMBER          100.0%        100.0%
-Classpath                         100.0%        100.0%
-Product Name                      100.0%        100.0%
-Overall normalized match rate:    100.0%
-----------------------------------------------------------
-Top review reasons:
-    580  Uncertain category / generic classpath fallback
-    560  No technical attributes extracted
-    634  Mobile description outside target window
-```
-
----
-
-## ❓ 13. Troubleshooting, Edge Cases & FAQs
 > hallucinating.** Full analysis in [`FINDINGS_AND_FIXES.md`](FINDINGS_AND_FIXES.md).
-
----
-
-## ❓ 13. Troubleshooting, Edge Cases & FAQs
-==========================================================
-           FuMA ACCURACY BENCHMARK REPORT
-==========================================================
-Rows processed:                     1000
-Elapsed:                            0.11s (9124 rows/s)
-----------------------------------------------------------
-1. Invoice Desc (<=40 chars):       100.0%  [PASS]
-2. Invoice Desc (ALL CAPS):         100.0%  [PASS]
-3. Mobile Desc (schema <=85):       100.0%  [PASS]
-4. Mobile Desc (target 60-80):       36.6%  [CHECK]
-5. Pydantic schema validation:      100.0%  [PASS]
-6. Specific classpath (non-generic):  6.2%  [CHECK]
-7. Attribute coverage:               44.0%  [CHECK]
-----------------------------------------------------------
-Success rows:                       420
-Needs human review:                 580
-Processing errors:                  0
-Average confidence:                 76.40
-----------------------------------------------------------
-Delivery columns:                   252  [PASS]
-Delivery rows validated:            1000
-Delivery schema valid:              True
-----------------------------------------------------------
-Ground-truth rows available:        200
-Ground-truth rows matched:          18
-FIELD                              EXACT    NORMALIZED
-MANUFACTURER_NAME                 100.0%        100.0%
-BRAND_NAME                        100.0%        100.0%
-MANUFACTURER_PART_NUMBER          100.0%        100.0%
-Classpath                         100.0%        100.0%
-Product Name                      100.0%        100.0%
-Overall normalized match rate:    100.0%
-----------------------------------------------------------
-Top review reasons:
-    580  Uncertain category / generic classpath fallback
-    560  No technical attributes extracted
-    634  Mobile description outside target window
-==========================================================
-```
 
 ---
 
 ## ❓ 13. Troubleshooting, Edge Cases & FAQs
 
 ### Q1: Why is my virtual environment slow on macOS?
-**Cause:** When `.venv` is stored on an iCloud-synced folder (such as `~/Desktop`), macOS's `fileproviderd` scans every imported package file.  
-**Fix:** Build the venv in a non-synced directory (e.g. `python3 -m venv ~/.fuma-venv/v1`) as detailed in [Step 1](#step-1-set-up-python-virtual-environment).
+**Cause:** When `.venv` is stored on an iCloud-synced folder (such as `~/Desktop`),
+macOS's `fileproviderd` scans every imported package file.
+**Fix:** Build the venv in a non-synced directory (e.g. `python3 -m venv ~/.fuma-venv/v1`).
 
 ### Q2: Port 8000 or 5173 is already in use
 **Fix:** Kill the existing process:
@@ -966,33 +886,41 @@ lsof -ti:5173 | xargs kill -9
 
 ### Q3: Why report two separate mobile KPIs?
 **Answer:** `ProductRecord` permits up to 85 characters (100% pass) while the
-client target is $60-80$ (98.1%). Conflating them would let the dashboard claim
+client target is 60-80 (98.1%). Conflating them would let the dashboard claim
 compliance it has not earned, so both are surfaced. Rows outside the window are
 routed to human review rather than padded with filler.
 
-### Q3b: Why is attribute coverage reported three ways?
+### Q4: Why is attribute coverage reported three ways?
 **Answer:** Because one number would mislead. The pipeline injects `Product Type`
 and `Application` from the classpath it just assigned, so "100% coverage" is true
-but **tautological** — coverage is 100% *because the code guarantees ≥1 attribute
+but **tautological** - coverage is 100% *because the code guarantees >=1 attribute
 exists*. Those defaults are kept (they are useful for faceted search) but reported
 separately: `structured 100% / evidence-backed 95.4% / 37.1% of values inferred`.
 
-### Q3c: Why do 442 of 1,000 rows need review when nothing errored?
+### Q5: Why do 442 of 1,000 rows need review when nothing errored?
 **Answer:** Mostly brand evidence. A brand resolved only by fuzzy match or an
-ambiguous token is capped at confidence 75 — below the 80 threshold — so it cannot
+ambiguous token is capped at confidence 75 - below the 80 threshold - so it cannot
 ship as a clean success. Before this gate, **8.6% of rows shipped at confidence
-100 carrying a plausible-but-wrong ®-marked brand**: a Dewalt charger labelled
-`Diablo®` because its MPN contains `dcb`. A large *honest* review queue is the
+100 carrying a plausible-but-wrong (R)-marked brand**: a Dewalt charger labelled
+`Diablo(R)` because its MPN contains `dcb`. A large *honest* review queue is the
 intended behaviour, not a regression.
 
-### Q4: Why are legal trademark symbols (`®`, `™`) displaying properly in Excel?
-**Answer:** Plain UTF-8 CSVs are opened by Microsoft Excel in legacy ASCII mode, corrupting non-ASCII characters. FuMA writes CSVs using the `utf-8-sig` encoding (which inserts the UTF-8 Byte Order Mark `\xef\xbb\xbf`), forcing Excel to render symbols with 100% fidelity.
+### Q6: Why are so many delivery columns blank?
+**Answer:** 199 of 252 columns have no source in a 6-column supplier feed
+(`UPC`, `Warranty`, `Country Of Origin`, `Line Drawing`...). Blank is the honest
+value; the alternative is invention, and the brief states that invented values
+score zero.
+
+### Q7: Why do legal trademark symbols survive in Excel?
+**Answer:** Plain UTF-8 CSVs open in legacy ASCII mode in Microsoft Excel,
+corrupting non-ASCII characters. FuMA writes CSVs using `utf-8-sig` (inserting the
+UTF-8 Byte Order Mark), forcing Excel to render (R) and (TM) with full fidelity.
 
 ---
 
 <div align="center">
 
-**FuMA Industrial Data Foundry** • *Engineering Precision for Industrial Catalogs*  
+**FuMA Industrial Data Foundry** - *Engineering Precision for Industrial Catalogs*
 Built for the UniHack Hackathon
 
 </div>
