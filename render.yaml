@@ -5,7 +5,9 @@ services:
     region: oregon
     plan: free
     buildCommand: bash build.sh
-    startCommand: uvicorn member3.backend.main:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn member3.backend.main:app --host 0.0.0.0 --port $PORT --workers 1
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.12
+      - key: WEB_CONCURRENCY
+        value: "1"

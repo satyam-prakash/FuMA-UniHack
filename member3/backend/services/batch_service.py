@@ -23,12 +23,37 @@ def _new_job_id() -> str:
     return f"job_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:4]}"
 
 
+import json
+import tempfile
+from pathlib import Path
+
+_CACHE_DIR = Path(tempfile.gettempdir()) / "fuma_job_cache"
+_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
 class JobStore:
-    """Thread-safe in-memory job registry."""
+    """Thread-safe in-memory job registry with disk persistence fallback."""
 
     def __init__(self) -> None:
         self._jobs: Dict[str, Dict[str, Any]] = {}
         self._lock = threading.Lock()
+
+    def _save_to_disk(self, job: Dict[str, Any]) -> None:
+        try:
+            p = _CACHE_DIR / f"{job['job_id']}.json"
+            p.write_text(json.dumps(job, default=str), encoding="utf-8")
+        except Exception:
+            pass
+
+    def _load_from_disk(self, job_id: str) -> Optional[Dict[str, Any]]:
+        try:
+            p = _CACHE_DIR / f"{job_id}.json"
+            if p.exists():
+                data = json.loads(p.read_text(encoding="utf-8"))
+                return data
+        except Exception:
+            pass
+        return None
 
     # ------------------------------------------------------------------ create
 
@@ -50,11 +75,18 @@ class JobStore:
         }
         with self._lock:
             self._jobs[job_id] = job
+            self._save_to_disk(job)
         return self.summary(job_id)
 
     def get(self, job_id: str) -> Optional[Dict[str, Any]]:
         with self._lock:
-            return self._jobs.get(job_id)
+            if job_id in self._jobs:
+                return self._jobs[job_id]
+            loaded = self._load_from_disk(job_id)
+            if loaded:
+                self._jobs[job_id] = loaded
+                return loaded
+            return None
 
     def summary(self, job_id: str) -> Optional[Dict[str, Any]]:
         """Job state without the heavy ``rows``/``results`` payloads."""
@@ -93,6 +125,8 @@ class JobStore:
 
         job["elapsed_seconds"] = round(time.time() - started, 3)
         job["status"] = "completed_with_review" if (job["review"] or job["errors"]) else "completed"
+        with self._lock:
+            self._save_to_disk(job)
         return self.summary(job_id)
 
     def start_job_async(self, job_id: str) -> Dict[str, Any]:
@@ -101,6 +135,8 @@ class JobStore:
         if job is None:
             raise KeyError(job_id)
         job["status"] = "queued"
+        with self._lock:
+            self._save_to_disk(job)
 
         def _worker() -> None:
             try:
@@ -192,6 +228,10 @@ class JobStore:
         }
         if action in ("approve", "mark_reviewed", "override"):
             result["review"]["needs_review"] = False
+        job = self.get(job_id)
+        if job:
+            with self._lock:
+                self._save_to_disk(job)
         return result
 
 
