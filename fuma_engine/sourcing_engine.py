@@ -52,7 +52,9 @@ BRAND_DOMAINS: Dict[str, str] = {
     "simpson": "simpsonstrong-tie.com",
     "simpson strong": "simpsonstrong-tie.com",
     "trex": "trex.com",
-    "azek": "azek.com",
+    "azek": "azekexteriors.com",
+    "southwire": "southwire.com",
+    "kreg": "kregtool.com",
     "timbertech": "timbertech.com",
     "james hardie": "jameshardie.com",
     "hardie": "jameshardie.com",
@@ -111,7 +113,7 @@ BRAND_DOMAINS: Dict[str, str] = {
     "crescent": "crescenttool.com",
     "proto": "prototools.com",
     "westward": "westwardtools.com",
-    "kichler": "kichlerlighting.com",
+    "kichler": "kichler.com",
     "ge": "geappliances.com",
     "lg": "lg.com",
 }
@@ -129,8 +131,55 @@ VERIFIED_SEARCH_PATTERNS: Dict[str, str] = {
     "diablotools.com": "https://www.diablotools.com/search?q={mpn}",
     "freudtools.com": "https://www.freudtools.com/search?q={mpn}",
     "trex.com": "https://www.trex.com/search?q={mpn}",
+    "azek.com": "https://www.azekexteriors.com/search?q={mpn}",
+    "azekexteriors.com": "https://www.azekexteriors.com/search?q={mpn}",
+    "timbertech.com": "https://www.timbertech.com/search?q={mpn}",
     "satco.com": "https://www.satco.com/search?q={mpn}",
     "leviton.com": "https://www.leviton.com/search?q={mpn}",
+    "southwire.com": "https://www.southwire.com/search?text={mpn}",
+    "kregtool.com": "https://www.kregtool.com/shop/search?q={mpn}",
+    "mirka.com": "https://www.mirka.com/en-us/search?query={mpn}",
+    "kichler.com": "https://www.kichler.com/search/?q={mpn}",
+    "kichlerlighting.com": "https://www.kichler.com/search/?q={mpn}",
+    "philips.com": "https://www.lighting.philips.com/main/search#q={mpn}",
+    "simpsonstrong-tie.com": "https://www.strongtie.com/search?q={mpn}",
+    "frigidaire.com": "https://www.frigidaire.com/search?q={mpn}",
+    "whirlpool.com": "https://www.whirlpool.com/search.html?term={mpn}",
+    "rheem.com": "https://www.rheem.com/search/?q={mpn}",
+    "hunterfan.com": "https://www.hunterfan.com/search?q={mpn}",
+    "ridgid.com": "https://www.ridgid.com/us/en/search?q={mpn}",
+    "stanleytools.com": "https://www.stanleytools.com/search?query={mpn}",
+    "craftsman.com": "https://www.craftsman.com/search?query={mpn}",
+    "irwin.com": "https://www.irwin.com/search?query={mpn}",
+    "lenoxtools.com": "https://www.lenoxtools.com/search?query={mpn}",
+    "channellock.com": "https://www.channellock.com/search?q={mpn}",
+}
+
+# Verified technical documentation & manuals portals (for Ref URL 2).
+VERIFIED_SUPPORT_PATTERNS: Dict[str, str] = {
+    "milwaukeetool.com": "https://www.milwaukeetool.com/support/manuals-and-downloads",
+    "dewalt.com": "https://www.dewalt.com/support/find-manuals",
+    "makitatools.com": "https://www.makitatools.com/service/owners-manuals",
+    "boschtools.com": "https://www.boschtools.com/us/en/service/manuals/",
+    "festool.com": "https://www.festool.com/service",
+    "3m.com": "https://www.3m.com/3M/en_US/company-us/SDS-search/",
+    "diablotools.com": "https://www.diablotools.com/contact",
+    "freudtools.com": "https://www.freudtools.com/contact",
+    "frigidaire.com": "https://www.frigidaire.com/en/p/owner-center/product-support/{mpn}",
+    "whirlpool.com": "https://www.whirlpool.com/owners-center/manuals-and-literature.html",
+    "rheem.com": "https://www.rheem.com/technical-documents/",
+    "southwire.com": "https://www.southwire.com/resources/technical-resources",
+    "kichler.com": "https://www.kichler.com/customer-care/resources/instruction-sheets/",
+    "kichlerlighting.com": "https://www.kichler.com/customer-care/resources/instruction-sheets/",
+    "trex.com": "https://www.trex.com/customer-support/trex-literature/",
+    "azekexteriors.com": "https://www.azekexteriors.com/resources/installation-guides",
+    "azek.com": "https://www.azekexteriors.com/resources/installation-guides",
+    "timbertech.com": "https://www.timbertech.com/resources/installation-help/",
+    "kregtool.com": "https://www.kregtool.com/support/manuals-and-guides",
+    "mirka.com": "https://www.mirka.com/en-us/support/downloads",
+    "simpsonstrong-tie.com": "https://www.strongtie.com/literature-library",
+    "satco.com": "https://www.satco.com/support/",
+    "leviton.com": "https://www.leviton.com/en/support",
 }
 
 # Retail marketplaces that must never appear in provenance URLs.
@@ -191,11 +240,15 @@ def build_provenance_urls(
 
     ref_urls: List[str] = []
 
-    # Only emit a search/product URL if we have a verified URL pattern
-    # for this manufacturer's website.
+    # 1. Verified first-party catalog / search URL (Ref URL 1)
     if mpn and domain in VERIFIED_SEARCH_PATTERNS:
         pattern = VERIFIED_SEARCH_PATTERNS[domain]
         ref_urls.append(pattern.format(mpn=quote_plus(mpn)))
+
+    # 2. Verified first-party manuals, literature & support portal (Ref URL 2)
+    if domain in VERIFIED_SUPPORT_PATTERNS:
+        support_pattern = VERIFIED_SUPPORT_PATTERNS[domain]
+        ref_urls.append(support_pattern.format(mpn=quote_plus(mpn)))
 
     # Safety net: filter out any excluded marketplace domains
     ref_urls = [
